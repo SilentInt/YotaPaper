@@ -43,7 +43,7 @@ class SettingsController(
     private lateinit var appDividersValue: TextView
     private lateinit var recentWindowValue: TextView
     private lateinit var recentCancelValue: TextView
-    private lateinit var recentRootClearValue: TextView // 新增
+    private lateinit var recentRootClearValue: TextView
     private lateinit var iconPackValue: TextView
     private lateinit var iconSizeValue: TextView
     private lateinit var lineIconsValue: TextView
@@ -72,16 +72,20 @@ class SettingsController(
     private lateinit var groupRefreshChevron: TextView
     private lateinit var groupRefreshContent: View
 
-    // 新增：控制中心分组折叠控件
+    // 控制中心分组折叠控件
     private lateinit var rowGroupControlCenter: View
     private lateinit var groupControlCenterChevron: TextView
     private lateinit var groupControlCenterContent: View
 
-    // 新增：控制中心开关行（已存在但确保绑定）
+    // 控制中心开关行
     private lateinit var rowControlCenter: View
     private lateinit var settingsControlCenterValue: TextView
     private lateinit var rowControlCenterAnimation: View
     private lateinit var settingsControlCenterAnimationValue: TextView
+    private lateinit var rowControlCenterVibration: View
+    private lateinit var settingsControlCenterVibrationValue: TextView
+    private lateinit var rowControlCenterEpd: View
+    private lateinit var settingsControlCenterEpdValue: TextView
 
     fun bind() {
         colsValue = activity.findViewById(R.id.settingsColsValue)
@@ -121,16 +125,20 @@ class SettingsController(
         groupRefreshChevron = activity.findViewById(R.id.groupRefreshChevron)
         groupRefreshContent = activity.findViewById(R.id.groupRefreshContent)
 
-        // 新增：控制中心分组折叠
+        // 控制中心分组折叠
         rowGroupControlCenter = activity.findViewById(R.id.rowGroupControlCenter)
         groupControlCenterChevron = activity.findViewById(R.id.groupControlCenterChevron)
         groupControlCenterContent = activity.findViewById(R.id.groupControlCenterContent)
 
-        // 新增：控制中心开关行
+        // 控制中心开关行
         rowControlCenter = activity.findViewById(R.id.rowControlCenter)
         settingsControlCenterValue = activity.findViewById(R.id.settingsControlCenterValue)
         rowControlCenterAnimation = activity.findViewById(R.id.rowControlCenterAnimation)
         settingsControlCenterAnimationValue = activity.findViewById(R.id.settingsControlCenterAnimationValue)
+        rowControlCenterVibration = activity.findViewById(R.id.rowControlCenterVibration)
+        settingsControlCenterVibrationValue = activity.findViewById(R.id.settingsControlCenterVibrationValue)
+        rowControlCenterEpd = activity.findViewById(R.id.rowControlCenterEpd)
+        settingsControlCenterEpdValue = activity.findViewById(R.id.settingsControlCenterEpdValue)
     }
 
     fun setup(initial: LauncherConfig) {
@@ -236,7 +244,7 @@ class SettingsController(
             }
         }
 
-        // 新增：Root 清理点击事件
+        // Root 清理点击事件
         activity.findViewById<View>(R.id.rowRecentRootClear).setOnClickListener {
             val cfg = currentConfig()
             onConfigChanged(cfg.copy(rootClear = !cfg.rootClear), 0)
@@ -295,15 +303,24 @@ class SettingsController(
             }
         }
 
-        // 新增：控制中心总开关
+        // 控制中心总开关
         rowControlCenter.setOnClickListener {
             val cfg = currentConfig()
             onConfigChanged(cfg.copy(controlCenterEnabled = !cfg.controlCenterEnabled), 0)
         }
-        // 新增：控制中心动画开关
+        // 控制中心动画开关
         rowControlCenterAnimation.setOnClickListener {
             val cfg = currentConfig()
             onConfigChanged(cfg.copy(controlCenterAnimation = !cfg.controlCenterAnimation), 0)
+        }
+        // 控制中心震动开关
+        rowControlCenterVibration.setOnClickListener {
+            val cfg = currentConfig()
+            onConfigChanged(cfg.copy(controlCenterVibration = !cfg.controlCenterVibration), 0)
+        }
+        rowControlCenterEpd.setOnClickListener {
+            val cfg = currentConfig()
+            onConfigChanged(cfg.copy(controlCenterEpd = !cfg.controlCenterEpd), 0)
         }
 
         // 分组折叠逻辑
@@ -316,7 +333,7 @@ class SettingsController(
         rowGroupRecent.setOnClickListener {
             toggleGroup(groupRecentContent, groupRecentChevron)
         }
-        // 新增：控制中心分组折叠
+        // 控制中心分组折叠
         rowGroupControlCenter.setOnClickListener {
             toggleGroup(groupControlCenterContent, groupControlCenterChevron)
         }
@@ -324,8 +341,84 @@ class SettingsController(
             toggleGroup(groupRefreshContent, groupRefreshChevron)
         }
         activity.findViewById<View>(R.id.settingsReset).setOnClickListener {
-            Toast.makeText(activity, "已恢复默认", Toast.LENGTH_SHORT).show()
-            onConfigChanged(LauncherConfig(), AFFECT_APPS or AFFECT_HOME or AFFECT_ICONS or AFFECT_REFRESH)
+            val dialog = android.app.Dialog(activity)
+            dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+
+            dialog.window?.apply {
+                // 清除对话框底部的半透明灰色遮罩（Dim层），解决全屏发灰的问题
+                clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                // 禁用对话框的原生淡入淡出动画，解决取消时墨水屏闪烁黑块的问题
+                setWindowAnimations(0)
+                // 窗口默认背景透明
+                setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+            }
+
+            val dp = { v: Int -> (v * activity.resources.displayMetrics.density).toInt() }
+
+            // 构建纯白底色、1dp黑边的自定义弹窗
+            val root = android.widget.LinearLayout(activity).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(android.graphics.Color.parseColor("#FAFAF7")) // @color/paper
+                    setStroke(dp(1), android.graphics.Color.parseColor("#1A1A1A")) // @color/ink
+                    cornerRadius = dp(8).toFloat()
+                }
+                setPadding(dp(24), dp(24), dp(24), dp(16))
+                layoutParams = android.view.ViewGroup.LayoutParams(
+                    (activity.resources.displayMetrics.widthPixels * 0.85).toInt(),
+                    android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            }
+
+            // 标题
+            root.addView(android.widget.TextView(activity).apply {
+                text = "恢复默认"
+                textSize = 20f
+                setTextColor(android.graphics.Color.parseColor("#1A1A1A"))
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setPadding(0, 0, 0, dp(16))
+            })
+
+            // 提示内容
+            root.addView(android.widget.TextView(activity).apply {
+                text = "确定要将所有设置恢复为默认状态吗？"
+                textSize = 16f
+                setTextColor(android.graphics.Color.parseColor("#1A1A1A"))
+                setPadding(0, 0, 0, dp(32))
+            })
+
+            // 底部按钮行
+            val btnRow = android.widget.LinearLayout(activity).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.END
+            }
+
+            // 取消按钮
+            btnRow.addView(android.widget.TextView(activity).apply {
+                text = "取消"
+                textSize = 16f
+                setTextColor(android.graphics.Color.parseColor("#8A8A8A")) // @color/gray
+                setPadding(dp(16), dp(8), dp(16), dp(8))
+                setOnClickListener { dialog.dismiss() }
+            })
+
+            // 确定按钮
+            btnRow.addView(android.widget.TextView(activity).apply {
+                text = "确定"
+                textSize = 16f
+                setTextColor(android.graphics.Color.parseColor("#1A1A1A"))
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setPadding(dp(16), dp(8), 0, dp(8))
+                setOnClickListener {
+                    dialog.dismiss()
+                    Toast.makeText(activity, "已恢复默认", Toast.LENGTH_SHORT).show()
+                    onConfigChanged(LauncherConfig(), AFFECT_APPS or AFFECT_HOME or AFFECT_ICONS or AFFECT_REFRESH)
+                }
+            })
+
+            root.addView(btnRow)
+            dialog.setContentView(root)
+            dialog.show()
         }
 
         if (!showYotaSettings) {
@@ -366,6 +459,8 @@ class SettingsController(
         // 更新控制中心值
         settingsControlCenterValue.text = activity.getString(if (config.controlCenterEnabled) R.string.divider_on else R.string.divider_off)
         settingsControlCenterAnimationValue.text = activity.getString(if (config.controlCenterAnimation) R.string.divider_on else R.string.divider_off)
+        settingsControlCenterVibrationValue.text = activity.getString(if (config.controlCenterVibration) R.string.divider_on else R.string.divider_off)
+        settingsControlCenterEpdValue.text = activity.getString(if (config.controlCenterEpd) R.string.divider_on else R.string.divider_off)
     }
 
     private fun updateAnimationVisibility(config: LauncherConfig) {

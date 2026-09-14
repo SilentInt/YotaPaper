@@ -29,7 +29,9 @@ class LauncherConfigStore(context: Context) {
             rootClear = prefs.getBoolean("root_clear", false),
             // 新增控制中心配置
             controlCenterEnabled = prefs.getBoolean("control_center_enabled", true),
-            controlCenterAnimation = prefs.getBoolean("control_center_animation", true)
+            controlCenterAnimation = prefs.getBoolean("control_center_animation", true),
+            controlCenterVibration = prefs.getBoolean("control_center_vibration", true),
+            controlCenterEpd = prefs.getBoolean("control_center_epd", true)
         )
     }
 
@@ -84,6 +86,8 @@ class LauncherConfigStore(context: Context) {
             .putBoolean("root_clear", config.rootClear)
             .putBoolean("control_center_enabled", config.controlCenterEnabled)
             .putBoolean("control_center_animation", config.controlCenterAnimation)
+            .putBoolean("control_center_vibration", config.controlCenterVibration)
+            .putBoolean("control_center_epd", config.controlCenterEpd)
             .apply()
     }
 
