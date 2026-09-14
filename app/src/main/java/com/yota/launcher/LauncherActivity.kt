@@ -320,6 +320,15 @@ class LauncherActivity : Activity() {
         maybeShowGuide()
         StartupTracer.stage("guide")
 
+        // ================= 预热 Root Shell =================
+        // 重启后第一次进桌面就 fork su、建立 libsu 全局 shell，
+        // 这样后续在第三方控制中心里点击飞行模式时，Shell.getShell() 直接走缓存，
+        // 不会在主线程阻塞、不会触发 ANR。
+        Thread {
+            runCatching { RootUtil.isRootAvailable() }
+        }.start()
+        // ==================================================
+
         // ================= 控制中心服务启动（根据配置） =================
         if (config.controlCenterEnabled) {
             startControlCenterService()

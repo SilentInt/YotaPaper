@@ -58,7 +58,10 @@ class ControlCenterService : Service() {
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
-                Intent.ACTION_SCREEN_OFF -> stopEventReader()
+                Intent.ACTION_SCREEN_OFF -> {
+                    stopEventReader()
+                    isPanelActive = false
+                }
                 Intent.ACTION_SCREEN_ON -> if (isServiceActive) startEventReader()
             }
         }

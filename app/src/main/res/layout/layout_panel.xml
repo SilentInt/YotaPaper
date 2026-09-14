@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#FFFFFF"
@@ -7,23 +8,135 @@
     android:padding="16dp">
 
     <!-- 顶部时间与状态 -->
-    <LinearLayout
+    <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
         android:layout_marginBottom="24dp">
-        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
-            <TextView android:id="@+id/tv_time" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="00:00" android:textColor="#000000" android:textSize="48sp" android:textStyle="bold" android:includeFontPadding="false"/>
-            <TextView android:id="@+id/tv_date" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="1月1日 星期一" android:textColor="#000000" android:textSize="14sp" android:textStyle="bold" android:layout_marginTop="4dp"/>
+
+        <TextView
+            android:id="@+id/tv_time"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentStart="true"
+            android:layout_alignParentTop="true"
+            android:includeFontPadding="false"
+            android:textColor="#000000"
+            android:textSize="48sp"
+            android:textStyle="bold"
+            tools:text="00:00" />
+
+        <TextView
+            android:id="@+id/tv_date"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_below="@id/tv_time"
+            android:layout_alignParentStart="true"
+            android:layout_marginTop="4dp"
+            android:textColor="#000000"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            tools:text="1月1日 星期一" />
+
+        <!-- 墨水屏专属电池状态栏 -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentTop="true"
+            android:layout_alignParentEnd="true"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <!-- 充电图标 ⚡ -->
+            <TextView
+                android:id="@+id/tv_battery_charging"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="4dp"
+                android:text="⚡"
+                android:textColor="#000000"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <!-- 纯 XML 拼接的黑白点阵电池图标 -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+                <!-- 电池外框 -->
+                <FrameLayout
+                    android:layout_width="22dp"
+                    android:layout_height="12dp"
+                    android:background="#000000"
+                    android:padding="1.5dp">
+                    <!-- 内部电量轨道 -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="#FFFFFF"
+                        android:orientation="horizontal"
+                        android:weightSum="100">
+                        <View
+                            android:id="@+id/view_battery_fill"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="85"
+                            android:background="#000000" />
+                    </LinearLayout>
+                </FrameLayout>
+                <!-- 电池正极触头 -->
+                <View
+                    android:layout_width="2dp"
+                    android:layout_height="4dp"
+                    android:background="#000000" />
+            </LinearLayout>
+
+            <!-- 电量百分比 -->
+            <TextView
+                android:id="@+id/tv_battery_percent"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:textColor="#000000"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                tools:text="85%" />
         </LinearLayout>
-        <TextView android:id="@+id/tv_battery" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="电量: --%" android:textColor="#000000" android:textSize="14sp" android:textStyle="bold" android:layout_marginTop="8dp"/>
-    </LinearLayout>
+
+        <!-- 飞行模式图标：默认显示关闭状态(白底黑框) -->
+        <ImageView
+            android:id="@+id/btn_airplane_mode"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_alignBottom="@id/tv_date"
+            android:layout_toStartOf="@id/btn_settings_top"
+            android:layout_marginEnd="20dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:contentDescription="飞行模式"
+            android:focusable="true"
+            android:src="@drawable/ic_airplane_mode_off" />
+
+        <ImageView
+            android:id="@+id/btn_settings_top"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_alignBottom="@id/tv_date"
+            android:layout_alignParentEnd="true"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:contentDescription="设置"
+            android:focusable="true"
+            android:src="@drawable/ic_settings_gear" />
+    </RelativeLayout>
 
     <!-- 快捷开关 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="24dp"
+        android:baselineAligned="false"
         android:orientation="horizontal">
         <LinearLayout android:id="@+id/btn_wifi" android:layout_width="0dp" android:layout_height="70dp" android:layout_marginEnd="8dp" android:layout_weight="1" android:background="@drawable/bg_btn_off" android:gravity="center" android:orientation="vertical" android:clickable="true" android:focusable="true">
             <TextView android:id="@+id/tv_wifi_title" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="WLAN" android:textColor="#000000" android:textSize="13sp" android:textStyle="bold" />
@@ -33,8 +146,9 @@
             <TextView android:id="@+id/tv_bt_title" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="蓝牙" android:textColor="#000000" android:textSize="13sp" android:textStyle="bold" />
             <TextView android:id="@+id/tv_bt_sub" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginHorizontal="6dp" android:layout_marginTop="2dp" android:gravity="center" android:ellipsize="end" android:singleLine="true" android:textColor="#000000" android:textSize="10sp" android:visibility="gone" />
         </LinearLayout>
-        <TextView android:id="@+id/btn_saver" android:layout_width="0dp" android:layout_height="70dp" android:layout_marginEnd="8dp" android:layout_weight="1" android:background="@drawable/bg_btn_off" android:gravity="center" android:text="省电模式" android:textColor="#000000" android:textSize="13sp" android:textStyle="bold" />
-        <TextView android:id="@+id/btn_settings" android:layout_width="0dp" android:layout_height="70dp" android:layout_weight="1" android:background="@drawable/bg_btn_off" android:gravity="center" android:text="设置" android:textColor="#000000" android:textSize="13sp" android:textStyle="bold" />
+
+        <TextView android:id="@+id/btn_refresh" android:layout_width="0dp" android:layout_height="70dp" android:layout_marginEnd="8dp" android:layout_weight="1" android:background="@drawable/bg_btn_off" android:gravity="center" android:text="全刷" android:textColor="#000000" android:textSize="13sp" android:textStyle="bold" />
+        <TextView android:id="@+id/btn_lock" android:layout_width="0dp" android:layout_height="70dp" android:layout_weight="1" android:background="@drawable/bg_btn_off" android:gravity="center" android:text="锁定" android:textColor="#000000" android:textSize="13sp" android:textStyle="bold" />
     </LinearLayout>
 
     <!-- 音量控制 -->
@@ -55,11 +169,11 @@
             android:id="@+id/tv_volume_percent"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="50%"
             android:textColor="#000000"
             android:textSize="14sp"
             android:textStyle="bold"
-            android:layout_marginStart="8dp" />
+            android:layout_marginStart="8dp"
+            tools:text="50%" />
         <SeekBar
             android:id="@+id/volume_slider"
             android:layout_width="0dp"
@@ -68,11 +182,136 @@
             android:layout_marginStart="16dp"
             android:minHeight="30dp"
             android:progressTint="#000000"
+            android:progressBackgroundTint="#444444"
             android:thumb="@drawable/seekbar_thumb"
-            android:thumbTint="#000000" />
+            android:thumbTint="#000000"
+            tools:ignore="NewApi" />
     </LinearLayout>
 
-    <!-- 媒体卡片 (移动到了通知清除按钮的上方) -->
+    <!-- EPD 伴随控制卡片 -->
+    <LinearLayout
+        android:id="@+id/epd_card"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_btn_off"
+        android:orientation="vertical"
+        android:padding="12dp"
+        android:visibility="gone"
+        android:layout_marginBottom="16dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="12dp">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="EPD 刷新参数"
+                android:textColor="#000000"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+            <TextView
+                android:id="@+id/tv_epd_app_name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_btn_on"
+                android:paddingHorizontal="6dp"
+                android:paddingVertical="2dp"
+                android:textColor="#FFFFFF"
+                android:textSize="11sp"
+                tools:text="微信读书" />
+        </LinearLayout>
+
+        <!-- 模式切换 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="36dp"
+            android:orientation="horizontal"
+            android:background="@drawable/bg_btn_off"
+            android:baselineAligned="false"
+            android:layout_marginBottom="8dp">
+            <TextView android:id="@+id/btn_epd_mode_0" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:text="高画质" android:textColor="#000000" android:textSize="13sp" android:textStyle="bold" />
+            <TextView android:id="@+id/btn_epd_mode_1" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:text="流畅" android:textColor="#000000" android:textSize="13sp" android:textStyle="bold" />
+            <TextView android:id="@+id/btn_epd_mode_2" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:text="动画" android:textColor="#000000" android:textSize="13sp" android:textStyle="bold" />
+        </LinearLayout>
+
+
+        <!-- 动画模式提示与重启按钮 -->
+        <LinearLayout
+            android:id="@+id/hint_epd_2"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginTop="8dp"
+            android:visibility="gone">
+            <TextView
+                android:id="@+id/tv_epd_2_msg"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="动画模式需重启应用生效"
+                android:textColor="#8A8A8A"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/btn_epd_restart_app"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:background="@drawable/bg_btn_clear"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="2dp"
+                android:text="立即重启"
+                android:textColor="#000000"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- 具体参数 -->
+        <LinearLayout
+            android:id="@+id/epd_params_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <!-- 对比度 0-32 -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:layout_marginTop="8dp">
+                <TextView android:layout_width="50dp" android:layout_height="wrap_content" android:text="对比度" android:textColor="#000000" android:textSize="13sp" />
+                <SeekBar android:id="@+id/epd_slider_contrast" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:max="32" android:progressTint="#000000" android:progressBackgroundTint="#444444" android:thumb="@drawable/seekbar_thumb" android:thumbTint="#000000" tools:ignore="NewApi" />
+                <TextView android:id="@+id/tv_epd_contrast" android:layout_width="25dp" android:layout_height="wrap_content" android:gravity="end" android:textColor="#000000" android:textSize="13sp" android:textStyle="bold" tools:text="10" />
+            </LinearLayout>
+            <!-- 锐化 0-16 -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:layout_marginTop="8dp">
+                <TextView android:layout_width="50dp" android:layout_height="wrap_content" android:text="锐化" android:textColor="#000000" android:textSize="13sp" />
+                <SeekBar android:id="@+id/epd_slider_sharp" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:max="16" android:progressTint="#000000" android:progressBackgroundTint="#444444" android:thumb="@drawable/seekbar_thumb" android:thumbTint="#000000" tools:ignore="NewApi" />
+                <TextView android:id="@+id/tv_epd_sharp" android:layout_width="25dp" android:layout_height="wrap_content" android:gravity="end" android:textColor="#000000" android:textSize="13sp" android:textStyle="bold" tools:text="2" />
+            </LinearLayout>
+            <!-- 黑拉伸 0-125 -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:layout_marginTop="8dp">
+                <TextView android:layout_width="50dp" android:layout_height="wrap_content" android:text="黑拉伸" android:textColor="#000000" android:textSize="13sp" />
+                <SeekBar android:id="@+id/epd_slider_black" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:max="125" android:progressTint="#000000" android:progressBackgroundTint="#444444" android:thumb="@drawable/seekbar_thumb" android:thumbTint="#000000" tools:ignore="NewApi" />
+                <TextView android:id="@+id/tv_epd_black" android:layout_width="25dp" android:layout_height="wrap_content" android:gravity="end" android:textColor="#000000" android:textSize="13sp" android:textStyle="bold" tools:text="70" />
+            </LinearLayout>
+            <!-- 白拉伸 0-255 -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:layout_marginTop="8dp">
+                <TextView android:layout_width="50dp" android:layout_height="wrap_content" android:text="白拉伸" android:textColor="#000000" android:textSize="13sp" />
+                <SeekBar android:id="@+id/epd_slider_white" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:max="255" android:progressTint="#000000" android:progressBackgroundTint="#444444" android:thumb="@drawable/seekbar_thumb" android:thumbTint="#000000" tools:ignore="NewApi" />
+                <TextView android:id="@+id/tv_epd_white" android:layout_width="25dp" android:layout_height="wrap_content" android:gravity="end" android:textColor="#000000" android:textSize="13sp" android:textStyle="bold" tools:text="255" />
+            </LinearLayout>
+            <!-- 亮度 0-125 -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:layout_marginTop="8dp">
+                <TextView android:layout_width="50dp" android:layout_height="wrap_content" android:text="亮度" android:textColor="#000000" android:textSize="13sp" />
+                <SeekBar android:id="@+id/epd_slider_bright" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:max="125" android:progressTint="#000000" android:progressBackgroundTint="#444444" android:thumb="@drawable/seekbar_thumb" android:thumbTint="#000000" tools:ignore="NewApi" />
+                <TextView android:id="@+id/tv_epd_bright" android:layout_width="25dp" android:layout_height="wrap_content" android:gravity="end" android:textColor="#000000" android:textSize="13sp" android:textStyle="bold" tools:text="0" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 媒体卡片 -->
     <LinearLayout
         android:id="@+id/card_media"
         android:layout_width="match_parent"
@@ -93,9 +332,9 @@
             android:orientation="vertical"
             android:layout_marginEnd="8dp"
             android:padding="6dp">
-            <TextView android:id="@+id/tv_media_app_name" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🎵 正在播放" android:textColor="#000000" android:textSize="10sp" android:textStyle="bold" />
-            <TextView android:id="@+id/tv_media_title" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="获取中..." android:textColor="#000000" android:textSize="15sp" android:textStyle="bold" android:singleLine="true" android:ellipsize="end" android:layout_marginTop="2dp" />
-            <TextView android:id="@+id/tv_media_artist" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text=" " android:textColor="#000000" android:textSize="11sp" android:singleLine="true" android:ellipsize="end" />
+            <TextView android:id="@+id/tv_media_app_name" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#000000" android:textSize="10sp" android:textStyle="bold" tools:text="🎵 正在播放" />
+            <TextView android:id="@+id/tv_media_title" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#000000" android:textSize="15sp" android:textStyle="bold" android:singleLine="true" android:ellipsize="end" android:layout_marginTop="2dp" tools:text="获取中..." />
+            <TextView android:id="@+id/tv_media_artist" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#000000" android:textSize="11sp" android:singleLine="true" android:ellipsize="end" tools:text=" " />
         </LinearLayout>
 
         <LinearLayout
@@ -109,7 +348,7 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- 一键清除 (移动到了媒体卡片的下方，紧贴通知列表) -->
+    <!-- 一键清除 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

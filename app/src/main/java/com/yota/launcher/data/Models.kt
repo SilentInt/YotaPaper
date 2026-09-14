@@ -21,5 +21,7 @@ data class LauncherConfig(
     val iconSize: Int = 44,                 // 图标大小（单位 dp，默认 44）
     val rootClear: Boolean = false,          // 是否使用 Root 清理后台（默认关）
     val controlCenterEnabled: Boolean = true,   // 控制中心总开关
-    val controlCenterAnimation: Boolean = true  // 控制中心翻页动画
+    val controlCenterAnimation: Boolean = true, // 控制中心翻页动画
+    val controlCenterVibration: Boolean = true,  // 控制中心触摸震动
+    val controlCenterEpd: Boolean = true         // 控制中心EPD刷新模块
 )
