@@ -33,8 +33,12 @@ Yota Paper 是一款专为 Yota3（YOTA 3+，Android 7.1.1）墨水屏副屏设�
 - 从**屏幕顶部（10% 高度内）下拉**呼出（需要 Root，用于监听触摸事件；仅 Yota 背屏触控有效）
 - 主页前台：在**主页窗口内**以浮层打开，开合动画与主页翻页动画同机制，**连贯无撕裂**
 - 其它应用前台：以独立窗口打开兜底，保证任何界面都能呼出；该场景**不播动画**（瞬时开合）
-- 内容：时钟 / 日期 / 电量 / WiFi / 蓝牙 / 省电模式 / 音量 / 音乐控制卡 / 通知列表（消息聚合、点击直达、单条关闭、一键清空）
+- 顶部信息区：时钟 / 日期 / 充电标识 / 电量进度条与百分比
+- 快捷按钮：**飞行模式** / **设置**（齿轮直达设置页） / **全刷**（手动 EPD 全刷） / **锁定**（静默锁屏） / WiFi / 蓝牙 / 音量滑杆
+- **EPD 刷新卡片**：显示当前前台应用名，可就地切换 高画质 / 流畅 / 动画 模式（动画模式提供「立即重启」按钮），并内置对比度、锐化、黑拉伸、白拉伸、亮度滑杆；可在设置中整体关闭
+- 音乐控制卡 / 通知列表（消息聚合、点击直达、单条关闭、一键清空）
 - 通知读取权限未开启时面板内可直接引导授权（Root 可用则静默授权）；面板动画受「刷新与动画 → 控制中心动画」开关控制，且仅在高画质模式生效
+- 「设置 → 控制中心」可调：总开关、触摸震动、EPD 刷新卡片
 - 上拉或按 BACK 收起（收起动画仅在主页浮层场景播放）
 
 ### 图标
@@ -116,6 +120,7 @@ adb shell am start -n com.yota.launcher/.LauncherActivity
 |---|---|
 | [CHANGELOG.md](CHANGELOG.md) | 发布日志 / 更新日志 |
 | [docs/release-notes-v0.5.md](docs/release-notes-v0.5.md) | v0.5 发布说明（控制中心合并重构等） |
+| [docs/release-notes-v0.6.md](docs/release-notes-v0.6.md) | v0.6 发布说明（控制中心面板改版与 EPD 卡片） |
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | 完整使用说明（交互逻辑） |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构与源码结构 |
 | [docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md) | 第三方依赖与许可证 |
@@ -137,4 +142,4 @@ adb shell am start -n com.yota.launcher/.LauncherActivity
 
 - 源码包名：`com.yota.launcher`
 - `applicationId`：`com.yota.launcher`
-- `versionName`：`0.5`（`versionCode 5`）
+- `versionName`：`0.6`（`versionCode 6`）
