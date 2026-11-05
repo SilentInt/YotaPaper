@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 顶部状态行的蓝牙：描边版，和电池、WiFi 同一笔法。
+
+     字形还是那个「竖线 + 两组折线」的经典蓝牙符文，只是从实心填充改成 1.8 描边、
+     圆头圆角（与 ic_power 一致）。两条长斜线正好在 (12,12) 交叉、落在竖线上，
+     不需要再靠 group 缩放去凑视觉重量。
+
+     纵向 4.6 ~ 19.4（14.8/24），20dp 容器里约 12.3dp 高，比 WiFi 的 11dp 高一档 ——
+     蓝牙字形窄（宽只有高的 0.7 倍），压成同样高度会显得小一圈。
+
+     颜色写字面值 #FF1A1A1A（= @color/ink）而不是引用：minSdk 17 会让 AAPT 给低版本
+     预生成 PNG，那个流程解不了 strokeColor 的资源引用。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <path
+        android:pathData="M12,4.6 L12,19.4 M12,4.6 L17.2,8.5 L6.8,15.5 M12,19.4 L17.2,15.5 L6.8,8.5"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF1A1A1A"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

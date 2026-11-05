@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 顶部状态行的 WiFi：描边版，和电池同一笔法。
+
+     原来是 Material 的实心字形（fillColor 填出的墨块），跟描边的电池排在同一行，
+     一个像墨块一个像线框，视觉重量差一截。这里改成三条弧 + 一个圆点：
+     线宽 1.8，与 ic_power 一致；24 视口在 20dp 容器里缩放 0.83，落到屏上约 2px，
+     和电池外框的 2px 描边同粗细。
+
+     三条弧是**同心圆弧**（圆心就是圆点中心 (12,17.4)，半径 4.2 / 7.6 / 11，
+     每侧张角 52°），用 A 命令画，不是二次贝塞尔。
+
+     一开始用了 Q：控制点只贡献一半拱高 —— 端点 y=7.6、控制点 y=4，拱高其实只有 1.8，
+     半宽却有 8.2，比值 0.22；同样的半宽画成正圆弧是 0.52。结果越靠外圈越扁，
+     最上面那条几乎成了直线。同心圆的好处是三条弧的拱高/半宽比天然一致（都是 0.52），
+     看上去才是一个扇形，而不是一道比一道平的台阶。
+
+     纵向墨迹占 5.5 ~ 18.65（13.15/24），20dp 容器里约 11dp 高，与 11dp 的电池框齐平。
+     三条弧的弧顶间距均匀 3.4，扣掉线宽还剩 1.6 左右的空隙 —— 再密就会在
+     16 灰阶上连成一片。
+
+     圆点画实心而不是描一个小圆：1.2dp 的圆圈在墨水屏上会糊成一个灰点，实心反而干净，
+     这也和电池那四根实心电量条是同一种处理。
+
+     颜色写字面值 #FF1A1A1A（= @color/ink）而不是引用：minSdk 17 会让 AAPT 给低版本
+     预生成 PNG，那个流程解不了 strokeColor 的资源引用，会直接构建失败。
+     StatusBarController 开关状态切换走的是 setColorFilter(SRC_IN)，跟这里写什么色无关。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <path
+        android:pathData="M3.33,10.63 A11,11 0 0,1 20.67,10.63 M6.01,12.72 A7.6,7.6 0 0,1 17.99,12.72 M8.69,14.81 A4.2,4.2 0 0,1 15.31,14.81"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF1A1A1A"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <path
+        android:fillColor="#FF1A1A1A"
+        android:pathData="M10.75,17.4 a1.25,1.25 0 1,0 2.5,0 a1.25,1.25 0 1,0 -2.5,0" />
+</vector>

@@ -28,7 +28,8 @@ public class MainHook implements IXposedHookLoadPackage {
     private static boolean enable = true;
     private static int animWindowMs = 1200;
     private static int animFrameCount = 15;
-    private static boolean debugLog = true;
+    // 跑在被 hook 的第三方进程里，日志算在对方启动耗时上，默认关闭
+    private static boolean debugLog = false;
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
@@ -41,19 +42,20 @@ public class MainHook implements IXposedHookLoadPackage {
 
         reloadPrefs();
 
+        // 功能关闭时直接返回，不写日志：这里是别人的进程，多一行 I/O 都算在对方启动耗时里
         if (!enable) {
-            XposedBridge.log("YotaPageTurn: disabled, skip " + lpparam.packageName);
             return;
         }
 
         if (targetActivities.isEmpty()) {
-            XposedBridge.log("YotaPageTurn: no animation targets, skip " + lpparam.packageName);
             return;
         }
 
-        XposedBridge.log("YotaPageTurn: loadPackage " + lpparam.packageName
-                + " process=" + lpparam.processName
-                + " activities=" + targetActivities.size());
+        if (debugLog) {
+            XposedBridge.log("YotaPageTurn: loadPackage " + lpparam.packageName
+                    + " process=" + lpparam.processName
+                    + " activities=" + targetActivities.size());
+        }
 
         try {
             EpdPageTurnHook.install(lpparam.classLoader, lpparam.packageName,
@@ -86,13 +88,19 @@ public class MainHook implements IXposedHookLoadPackage {
             enable = lp.getBoolean("anim_enable", true);
             animWindowMs = lp.getInt("anim_window_ms", 1200);
             animFrameCount = lp.getInt("anim_frame_count", 15);
-            debugLog = lp.getBoolean("debug_log", true);
-            XposedBridge.log("YotaPageTurn: prefs loaded from launcher"
-                    + " activities=" + acts.size()
-                    + " windowMs=" + animWindowMs
-                    + " frameCount=" + animFrameCount);
+
+            // debugLog 要在打日志之前读完，否则判断用的是上一次的值
+            debugLog = lp.getBoolean("debug_log", false);
+            if (debugLog) {
+                XposedBridge.log("YotaPageTurn: prefs loaded from launcher"
+                        + " activities=" + acts.size()
+                        + " windowMs=" + animWindowMs
+                        + " frameCount=" + animFrameCount);
+            }
         } catch (Throwable t) {
-            XposedBridge.log("YotaPageTurn: launcher prefs read failed: " + t);
+            if (debugLog) {
+                XposedBridge.log("YotaPageTurn: launcher prefs read failed: " + t);
+            }
         }
 
         targetActivities = acts;

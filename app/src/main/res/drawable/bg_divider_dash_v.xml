@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 竖向虚线。shape="line" 只能画横线，靠 rotate 转成竖的；
+     但 rotate 只在自己的 bounds 内转，2dp 宽的 View 转完只有 2dp 长，
+     所以先用负 inset 把子层的 bounds 撑大，再靠 ViewGroup 裁剪回 View 尺寸。 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:bottom="-400dp"
+        android:left="-400dp"
+        android:right="-400dp"
+        android:top="-400dp">
+        <rotate
+            android:fromDegrees="90"
+            android:pivotX="50%"
+            android:pivotY="50%"
+            android:toDegrees="90">
+            <shape android:shape="line">
+                <stroke
+                    android:width="1dp"
+                    android:color="@color/gray"
+                    android:dashGap="3dp"
+                    android:dashWidth="3dp" />
+            </shape>
+        </rotate>
+    </item>
+</layer-list>

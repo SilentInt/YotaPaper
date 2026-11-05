@@ -14,6 +14,8 @@ class LauncherConfigStore(context: Context) {
             homeRows = prefs.getInt("home_rows", 3),
             showHomeDividers = prefs.getBoolean("show_home_dividers", true),
             showAppDividers = prefs.getBoolean("show_app_dividers", true),
+            homeTopStyle = prefs.getInt("home_top_style", 0),
+            homeTopIconStyle = prefs.getInt("home_top_icon_style", 0),
             recentWindowMs = prefs.getLong("recent_window_ms", 30 * 60_000L),
             recentCancelBackToApp = prefs.getBoolean("recent_cancel_back_to_app", true),
             iconPack = prefs.getString("icon_pack", "") ?: "",
@@ -25,13 +27,16 @@ class LauncherConfigStore(context: Context) {
             screenOffAnimation = prefs.getBoolean("screen_off_animation", true),
             screenOffAnimationStyle = prefs.getInt("screen_off_animation_style", 3),
             autoApplyEpdParams = prefs.getBoolean("auto_apply_epd_params", true),
-            iconSize = prefs.getInt("icon_size", 44),
-            rootClear = prefs.getBoolean("root_clear", false),
+            // 档位改成 40/50/60/70 后，老配置里的 42/72 会在这一步归一，
+            // 否则设置页高亮和右侧数值会对不上
+            iconSize = LauncherConfig.nearestIconSize(prefs.getInt("icon_size", 60)),
+            rootClear = prefs.getBoolean("root_clear", true),
             // 新增控制中心配置
             controlCenterEnabled = prefs.getBoolean("control_center_enabled", true),
             controlCenterAnimation = prefs.getBoolean("control_center_animation", true),
-            controlCenterVibration = prefs.getBoolean("control_center_vibration", true),
-            controlCenterEpd = prefs.getBoolean("control_center_epd", true)
+            controlCenterVibration = prefs.getBoolean("control_center_vibration", false),
+            controlCenterEpd = prefs.getBoolean("control_center_epd", true),
+            controlCenterBatteryStyle = prefs.getInt("control_center_battery_style", 0)
         )
     }
 
@@ -71,6 +76,8 @@ class LauncherConfigStore(context: Context) {
             .putInt("home_rows", config.homeRows)
             .putBoolean("show_home_dividers", config.showHomeDividers)
             .putBoolean("show_app_dividers", config.showAppDividers)
+            .putInt("home_top_style", config.homeTopStyle)
+            .putInt("home_top_icon_style", config.homeTopIconStyle)
             .putLong("recent_window_ms", config.recentWindowMs)
             .putBoolean("recent_cancel_back_to_app", config.recentCancelBackToApp)
             .putString("icon_pack", config.iconPack)
@@ -88,6 +95,7 @@ class LauncherConfigStore(context: Context) {
             .putBoolean("control_center_animation", config.controlCenterAnimation)
             .putBoolean("control_center_vibration", config.controlCenterVibration)
             .putBoolean("control_center_epd", config.controlCenterEpd)
+            .putInt("control_center_battery_style", config.controlCenterBatteryStyle)
             .apply()
     }
 
