@@ -6,6 +6,7 @@ import android.widget.Toast
 import android.app.Activity
 import com.yota.launcher.R
 import com.yota.launcher.data.LauncherConfig
+import com.yota.launcher.data.grid.GridSizing
 
 /**
  * Owns the settings rows. It only computes the next config and reports it
@@ -26,10 +27,6 @@ class SettingsController(
         const val AFFECT_ICONS = 4
         const val AFFECT_REFRESH = 8
 
-        private val COLUMN_OPTIONS = intArrayOf(3, 4, 5)
-        private val ROW_OPTIONS = intArrayOf(4, 5, 6)
-        private val HOME_COLUMN_OPTIONS = intArrayOf(3, 4, 5)
-        private val HOME_ROW_OPTIONS = intArrayOf(1, 2, 3)
         private val RECENT_WINDOW_OPTIONS_MS = longArrayOf(
             0L, 5 * 60_000L, 30 * 60_000L, 60 * 60_000L, 6 * 60 * 60_000L, 24 * 60 * 60_000L
         )
@@ -45,7 +42,6 @@ class SettingsController(
     private lateinit var recentCancelValue: TextView
     private lateinit var recentRootClearValue: TextView
     private lateinit var iconPackValue: TextView
-    private lateinit var iconSizeValue: TextView
     private lateinit var lineIconsValue: TextView
     private lateinit var refreshModeValue: TextView
     private lateinit var pageAnimationValue: TextView
@@ -98,7 +94,6 @@ class SettingsController(
         recentCancelValue = activity.findViewById(R.id.settingsRecentCancelValue)
         recentRootClearValue = activity.findViewById(R.id.settingsRecentRootClearValue)
         iconPackValue = activity.findViewById(R.id.settingsIconPackValue)
-        iconSizeValue = activity.findViewById(R.id.settingsIconSizeValue)
         lineIconsValue = activity.findViewById(R.id.settingsLineIconsValue)
         refreshModeValue = activity.findViewById(R.id.settingsRefreshModeValue)
         pageAnimationValue = activity.findViewById(R.id.settingsPageAnimationValue)
@@ -142,44 +137,49 @@ class SettingsController(
     }
 
     fun setup(initial: LauncherConfig) {
+        // 只提供行列数选择；图标大小与文字大小都由屏幕和行列数自动决定。
         activity.findViewById<View>(R.id.rowCols).setOnClickListener {
             val cfg = currentConfig()
-            val options = COLUMN_OPTIONS.map { it.toString() }
+            val options = GridSizing.columnOptions(screenColumnCap()).toList()
             showSelector(
-                activity.getString(R.string.settings_columns), options,
-                COLUMN_OPTIONS.indexOf(cfg.columns)
+                activity.getString(R.string.settings_columns), options.map { it.toString() },
+                optionIndex(options, cfg.columns)
             ) { index ->
-                onConfigChanged(currentConfig().copy(columns = COLUMN_OPTIONS[index]), AFFECT_APPS)
+                val picked = options.getOrNull(index) ?: return@showSelector
+                onConfigChanged(currentConfig().copy(columns = picked), AFFECT_APPS)
             }
         }
         activity.findViewById<View>(R.id.rowRows).setOnClickListener {
             val cfg = currentConfig()
-            val options = ROW_OPTIONS.map { it.toString() }
+            val options = GridSizing.rowOptions(screenRowCap()).toList()
             showSelector(
-                activity.getString(R.string.settings_rows), options,
-                ROW_OPTIONS.indexOf(cfg.rows)
+                activity.getString(R.string.settings_rows), options.map { it.toString() },
+                optionIndex(options, cfg.rows)
             ) { index ->
-                onConfigChanged(currentConfig().copy(rows = ROW_OPTIONS[index]), AFFECT_APPS)
+                val picked = options.getOrNull(index) ?: return@showSelector
+                onConfigChanged(currentConfig().copy(rows = picked), AFFECT_APPS)
             }
         }
         activity.findViewById<View>(R.id.rowHomeColumns).setOnClickListener {
             val cfg = currentConfig()
-            val options = HOME_COLUMN_OPTIONS.map { it.toString() }
+            val options = GridSizing.columnOptions(screenColumnCap()).toList()
             showSelector(
-                activity.getString(R.string.settings_home_columns), options,
-                HOME_COLUMN_OPTIONS.indexOf(cfg.homeColumns)
+                activity.getString(R.string.settings_home_columns), options.map { it.toString() },
+                optionIndex(options, cfg.homeColumns)
             ) { index ->
-                onConfigChanged(currentConfig().copy(homeColumns = HOME_COLUMN_OPTIONS[index]), AFFECT_HOME)
+                val picked = options.getOrNull(index) ?: return@showSelector
+                onConfigChanged(currentConfig().copy(homeColumns = picked), AFFECT_HOME)
             }
         }
         activity.findViewById<View>(R.id.rowHomeRows).setOnClickListener {
             val cfg = currentConfig()
-            val options = HOME_ROW_OPTIONS.map { it.toString() }
+            val options = GridSizing.homeRowOptions(screenHomeRowCap()).toList()
             showSelector(
-                activity.getString(R.string.settings_home_rows), options,
-                HOME_ROW_OPTIONS.indexOf(cfg.homeRows)
+                activity.getString(R.string.settings_home_rows), options.map { it.toString() },
+                optionIndex(options, cfg.homeRows)
             ) { index ->
-                onConfigChanged(currentConfig().copy(homeRows = HOME_ROW_OPTIONS[index]), AFFECT_HOME)
+                val picked = options.getOrNull(index) ?: return@showSelector
+                onConfigChanged(currentConfig().copy(homeRows = picked), AFFECT_HOME)
             }
         }
         activity.findViewById<View>(R.id.rowHomeDividers).setOnClickListener {
@@ -201,18 +201,6 @@ class SettingsController(
             ) { index ->
                 val chosen = if (index <= 0) "" else packs.getOrNull(index - 1)?.packageName ?: ""
                 onConfigChanged(currentConfig().copy(iconPack = chosen), AFFECT_ICONS)
-            }
-        }
-
-        activity.findViewById<View>(R.id.rowIconSize).setOnClickListener {
-            val cfg = currentConfig()
-            val options = intArrayOf(36, 40, 44, 48, 52, 56, 60)
-            val labels = options.map { "$it dp" }
-            showSelector(
-                "图标大小", labels,
-                options.indexOf(cfg.iconSize).coerceAtLeast(0)
-            ) { index ->
-                onConfigChanged(currentConfig().copy(iconSize = options[index]), AFFECT_APPS or AFFECT_HOME)
             }
         }
 
@@ -430,17 +418,25 @@ class SettingsController(
     }
 
     fun updateValues(config: LauncherConfig) {
-        colsValue.text = config.columns.toString()
-        rowsValue.text = config.rows.toString()
-        homeColumnsValue.text = config.homeColumns.toString()
-        homeRowsValue.text = config.homeRows.toString()
+        // 显示实际生效的行列数：优先用网格已测量的真实尺寸（与桌面完全一致），
+        // 网格尚未布局时才退回按屏幕尺寸估算。
+        val appGrid = activity.findViewById<View>(R.id.gridApps)
+        val homeGrid = activity.findViewById<View>(R.id.gridHome)
+        val density = activity.resources.displayMetrics.density
+        val appW = gridWidthDp(appGrid, density, 48f)
+        val appH = gridHeightDp(appGrid, density, screenHeightDp())
+        val homeW = gridWidthDp(homeGrid, density, 52f)
+        val homeH = gridHeightDp(homeGrid, density, (screenHeightDp() - 240f).coerceAtLeast(120f))
+        colsValue.text = GridSizing.resolveColumns(config.columns, appW, GridSizing.columnCap(appW)).toString()
+        rowsValue.text = GridSizing.resolveRows(config.rows, appH, GridSizing.rowCap(appH)).toString()
+        homeColumnsValue.text = GridSizing.resolveColumns(config.homeColumns, homeW, GridSizing.columnCap(homeW)).toString()
+        homeRowsValue.text = GridSizing.resolveHomeRows(config.homeRows, homeH, GridSizing.homeRowCap(homeH)).toString()
         homeDividersValue.text = activity.getString(if (config.showHomeDividers) R.string.divider_on else R.string.divider_off)
         appDividersValue.text = activity.getString(if (config.showAppDividers) R.string.divider_on else R.string.divider_off)
         recentWindowValue.text = activity.getString(windowLabel(config.recentWindowMs))
         recentCancelValue.text = activity.getString(if (config.recentCancelBackToApp) R.string.recent_cancel_back_to_app else R.string.recent_cancel_back_to_home)
         recentRootClearValue.text = activity.getString(if (config.rootClear) R.string.divider_on else R.string.divider_off)
         iconPackValue.text = iconPackLabel(config.iconPack)
-        iconSizeValue.text = "${config.iconSize} dp"
         lineIconsValue.text = activity.getString(if (config.autoLineIcons) R.string.divider_on else R.string.divider_off)
         refreshModeValue.text = activity.getString(
             when (config.refreshMode) {
@@ -523,6 +519,42 @@ class SettingsController(
         }.getOrNull()
         return label ?: packageName
     }
+
+    // ------------------------------------------------------------------ 自适应网格辅助
+
+    /** 当前值在选项列表中的下标（不在范围内时取最接近的一项）。 */
+    private fun optionIndex(options: List<Int>, value: Int): Int {
+        if (options.isEmpty()) return 0
+        val direct = options.indexOf(value)
+        if (direct >= 0) return direct
+        return options.indices.minByOrNull { kotlin.math.abs(options[it] - value) } ?: 0
+    }
+
+    private fun screenWidthDp(): Float = activity.resources.displayMetrics.widthPixels /
+            activity.resources.displayMetrics.density
+
+    private fun screenHeightDp(): Float = activity.resources.displayMetrics.heightPixels /
+            activity.resources.displayMetrics.density
+
+    /** 网格实际宽度（dp）；未布局时按屏幕宽度减边距估算。 */
+    private fun gridWidthDp(grid: View?, density: Float, marginsDp: Float): Float {
+        val w = grid?.width ?: 0
+        if (w > 0) return w / density
+        return (screenWidthDp() - marginsDp).coerceAtLeast(120f)
+    }
+
+    /** 网格实际高度（dp）；未布局时退回给定估算值。 */
+    private fun gridHeightDp(grid: View?, density: Float, fallbackDp: Float): Float {
+        val h = grid?.height ?: 0
+        if (h > 0) return h / density
+        return fallbackDp.coerceAtLeast(120f)
+    }
+
+    private fun screenColumnCap(): Int = GridSizing.columnCap(screenWidthDp() - 48f)
+
+    private fun screenRowCap(): Int = GridSizing.rowCap(screenHeightDp())
+
+    private fun screenHomeRowCap(): Int = GridSizing.homeRowCap(screenHeightDp() - 260f)
 
     private fun windowLabel(ms: Long): Int = when (ms) {
         0L -> R.string.recent_window_off

@@ -10,8 +10,10 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import com.yota.launcher.R
+import com.yota.launcher.data.grid.GridSizing
 import kotlin.math.abs
 import kotlin.math.min
 
@@ -25,6 +27,11 @@ import kotlin.math.min
  * - Page data is only rebound into the existing holders; empty slots are
  *   cleared in place. No remove/add, no requestLayout, no invalidate is
  *   issued for data changes.
+ *
+ * Icon size is adaptive: unless a fixed size was passed to [configure], the
+ * icon square is fitted to the current cell and grid
+ * (see [GridSizing.computeIconPx]), so the same view behaves identically on a
+ * 480x640 phone panel and on larger e-ink screens.
  */
 class EInkLauncherView @JvmOverloads constructor(
     context: Context,
@@ -42,6 +49,7 @@ class EInkLauncherView @JvmOverloads constructor(
     }
 
     private class ItemViewHolder(val itemView: View) {
+        val container: ViewGroup = itemView.findViewById(R.id.itemContainer)
         val icon: ImageView = itemView.findViewById(R.id.icon)
         val label: TextView = itemView.findViewById(R.id.label)
         val marker: TextView = itemView.findViewById(R.id.marker)
@@ -50,7 +58,11 @@ class EInkLauncherView @JvmOverloads constructor(
 
     private var columns = 4
     private var rows = 5
-    private var iconSizeDp = 44 // 新增：保存图标大小
+
+    /** Last applied square size in px; -1 until the first layout pass. */
+    private var appliedIconPx = -1
+    private var appliedLabelSize = -1f
+
     private var apps: List<ResolveInfo?> = emptyList()
     private var selection: Set<String> = emptySet()
     private var hiddenApps: Set<String> = emptySet()
@@ -75,11 +87,22 @@ class EInkLauncherView @JvmOverloads constructor(
         setWillNotDraw(false)
     }
 
-    // 新增：加入图标大小参数
-    fun configure(columns: Int, rows: Int, iconSizeDp: Int = 44) {
-        this.columns = columns.coerceIn(2, 6)
-        this.rows = rows.coerceIn(1, 7)
-        this.iconSizeDp = iconSizeDp
+    /** 设置网格行列；图标大小由 [onMeasure] 根据屏幕与格子自动计算。 */
+    fun configure(columns: Int, rows: Int) {
+        this.columns = columns.coerceIn(GridSizing.MIN_COLUMNS, GridSizing.MAX_COLUMNS)
+        this.rows = rows.coerceIn(GridSizing.MIN_ROWS, GridSizing.MAX_ROWS)
+    }
+
+    /** Icon edge in px that the grid would use for [columns] x [rows] at [widthPx] x [heightPx]. */
+    fun iconPxFor(widthPx: Int, heightPx: Int, columns: Int = this.columns, rows: Int = this.rows): Int {
+        val density = resources.displayMetrics.density
+        return GridSizing.computeIconPx(
+            cellWidthDp = if (columns > 0) widthPx.toFloat() / columns / density else 0f,
+            cellHeightDp = if (rows > 0) heightPx.toFloat() / rows / density else 0f,
+            columns = columns,
+            rows = rows,
+            density = density
+        )
     }
 
     fun setApps(
@@ -138,8 +161,6 @@ class EInkLauncherView @JvmOverloads constructor(
      */
     private fun resetGrid() {
         val targetCount = columns * rows
-        val iconPx = (iconSizeDp * context.resources.displayMetrics.density).toInt() // 计算对应像素大小
-
         if (holders.size != targetCount) {
             removeAllViews()
             holders.clear()
@@ -150,17 +171,9 @@ class EInkLauncherView @JvmOverloads constructor(
                 addView(itemView)
                 holders.add(ItemViewHolder(itemView))
             }
-        }
-
-        // 确保现有的每一个 holder 里的 icon 尺寸按照设定的 iconSizeDp 显示
-        for (holder in holders) {
-            val icon = holder.icon
-            if (icon.layoutParams.width != iconPx || icon.layoutParams.height != iconPx) {
-                icon.layoutParams = icon.layoutParams.apply {
-                    width = iconPx
-                    height = iconPx
-                }
-            }
+            // The pool was rebuilt: icon metrics must be re-applied on next layout.
+            appliedIconPx = -1
+            appliedLabelSize = -1f
         }
         rebind()
     }
@@ -241,6 +254,52 @@ class EInkLauncherView @JvmOverloads constructor(
         }
     }
 
+    // ------------------------------------------------------------------ Adaptive metrics
+
+    /**
+     * Applies the icon square, label text size and inner padding that fit the
+     * current cell. Called from layout so it survives rotation, window resizes
+     * and grid changes without every caller recomputing numbers.
+     */
+    private fun applyAdaptiveMetrics(widthPx: Int, heightPx: Int) {
+        if (widthPx <= 0 || heightPx <= 0 || holders.isEmpty()) return
+        val density = resources.displayMetrics.density
+        val cellW = widthPx.toFloat() / columns
+        val cellH = heightPx.toFloat() / rows
+        val cellDp = min(cellW, cellH) / density
+
+        val iconPx = iconPxFor(widthPx, heightPx)
+        // 标签随格子缩小：大格子最多 12sp；手动选择了很密的网格时降到 7.5sp，
+        // 仍保持单行可读（不换行、不截断成不可辨认）。
+        val labelSizeSp = (cellDp * 0.19f).coerceIn(7.5f, 12f)
+        val containerPadPx = (GridSizing.cellPaddingDp(cellDp) * density).toInt()
+        val labelMarginPx = (min(6f, maxOf(2f, cellDp * 0.05f)) * density).toInt()
+
+        val iconChanged = iconPx != appliedIconPx
+        val labelChanged = labelSizeSp != appliedLabelSize
+        if (!iconChanged && !labelChanged) return
+
+        appliedIconPx = iconPx
+        appliedLabelSize = labelSizeSp
+
+        for (holder in holders) {
+            val icon = holder.icon
+            val lp = icon.layoutParams
+            if (lp.width != iconPx || lp.height != iconPx) {
+                lp.width = iconPx
+                lp.height = iconPx
+                icon.layoutParams = lp
+            }
+            holder.container.setPadding(containerPadPx, containerPadPx, containerPadPx, containerPadPx)
+            val labelLp = holder.label.layoutParams as? LinearLayout.LayoutParams
+            if (labelLp != null && labelLp.topMargin != labelMarginPx) {
+                labelLp.topMargin = labelMarginPx
+                holder.label.layoutParams = labelLp
+            }
+            if (holder.label.textSize != labelSizeSp) holder.label.textSize = labelSizeSp
+        }
+    }
+
     // ------------------------------------------------------------------ Layout
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -249,6 +308,7 @@ class EInkLauncherView @JvmOverloads constructor(
         val w = widthSize - paddingLeft - paddingRight
         val h = heightSize - paddingTop - paddingBottom
         if (w > 0 && h > 0) {
+            applyAdaptiveMetrics(w, h)
             val cellW = MeasureSpec.makeMeasureSpec(w / columns, MeasureSpec.EXACTLY)
             val cellH = MeasureSpec.makeMeasureSpec(h / rows, MeasureSpec.EXACTLY)
             for (holder in holders) {
@@ -274,6 +334,15 @@ class EInkLauncherView @JvmOverloads constructor(
                 paddingLeft + (col + 1) * cellW,
                 paddingTop + (row + 1) * cellH
             )
+        }
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (w != oldw || h != oldh) {
+            // Force a metric recomputation for the new cell size.
+            appliedIconPx = -1
+            requestLayout()
         }
     }
 

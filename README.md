@@ -142,4 +142,4 @@ adb shell am start -n com.yota.launcher/.LauncherActivity
 
 - 源码包名：`com.yota.launcher`
 - `applicationId`：`com.yota.launcher`
-- `versionName`：`0.6`（`versionCode 6`）
+- `versionName`：`0.7`（`versionCode 7`）
