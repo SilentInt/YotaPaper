@@ -8,10 +8,10 @@ class LauncherConfigStore(context: Context) {
 
     fun load(): LauncherConfig {
         return LauncherConfig(
-            columns = prefs.getInt("columns", 4),
-            rows = prefs.getInt("rows", 5),
+            columns = prefs.getInt("columns", 0),          // 0 = 自动
+            rows = prefs.getInt("rows", 0),                // 0 = 自动
             homeColumns = prefs.getInt("home_columns", 4),
-            homeRows = prefs.getInt("home_rows", 3),
+            homeRows = prefs.getInt("home_rows", 0),       // 0 = 自动
             showHomeDividers = prefs.getBoolean("show_home_dividers", true),
             showAppDividers = prefs.getBoolean("show_app_dividers", true),
             recentWindowMs = prefs.getLong("recent_window_ms", 30 * 60_000L),
@@ -25,7 +25,6 @@ class LauncherConfigStore(context: Context) {
             screenOffAnimation = prefs.getBoolean("screen_off_animation", true),
             screenOffAnimationStyle = prefs.getInt("screen_off_animation_style", 3),
             autoApplyEpdParams = prefs.getBoolean("auto_apply_epd_params", true),
-            iconSize = prefs.getInt("icon_size", 44),
             rootClear = prefs.getBoolean("root_clear", false),
             // 新增控制中心配置
             controlCenterEnabled = prefs.getBoolean("control_center_enabled", true),
@@ -82,7 +81,6 @@ class LauncherConfigStore(context: Context) {
             .putBoolean("screen_off_animation", config.screenOffAnimation)
             .putInt("screen_off_animation_style", config.screenOffAnimationStyle)
             .putBoolean("auto_apply_epd_params", config.autoApplyEpdParams)
-            .putInt("icon_size", config.iconSize)
             .putBoolean("root_clear", config.rootClear)
             .putBoolean("control_center_enabled", config.controlCenterEnabled)
             .putBoolean("control_center_animation", config.controlCenterAnimation)

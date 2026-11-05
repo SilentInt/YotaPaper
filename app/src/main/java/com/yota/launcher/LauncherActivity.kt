@@ -37,6 +37,7 @@ import com.yota.launcher.epd.EpdManagerActivity
 import com.yota.launcher.epd.EpdParamsStore
 import com.yota.launcher.data.LauncherConfig
 import com.yota.launcher.data.LauncherConfigStore
+import com.yota.launcher.data.grid.GridSizing
 import com.yota.launcher.ui.ControlCenterPanel
 import com.yota.launcher.ui.EInkLauncherView
 import com.yota.launcher.ui.IconLoader
@@ -183,6 +184,10 @@ class LauncherActivity : Activity() {
     private var appsLoaded = false
     private var coldStartResume = true
 
+    // 最近一次实际使用的自适应行列（屏幕尺寸变化时用于判断是否需要重绑）
+    private var currentHomeGrid = 0 to 0
+    private var currentAppGrid = 0 to 0
+
     // 开屏动画防抖锁
     private var lastScreenOnAnimTime = 0L
 
@@ -235,6 +240,7 @@ class LauncherActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_launcher)
         StartupTracer.stage("setContentView")
+        installGridLayoutHook()
 
         store = LauncherConfigStore(this)
         repository = AppRepository(this)
@@ -762,11 +768,125 @@ class LauncherActivity : Activity() {
         })
     }
 
+    /**
+     * Resolved home grid for the current screen. A stored value of 0 means "auto":
+     * the launcher picks the most suitable grid for the measured panel
+     * (see [GridSizing]) and keeps it until the user picks a specific value.
+     */
+    private fun resolvedHomeGrid(): Pair<Int, Int> {
+        val widthDp = gridWidthDp(gridHome, 52f)
+        val heightDp = gridHeightDp(gridHome, contentHeightDp() - 240f)
+        val cols = GridSizing.resolveColumns(config.homeColumns, widthDp, GridSizing.columnCap(widthDp))
+        // 主页行数上限按网格实际高度计算，避免选了过多行导致每行过窄。
+        val homeRowCap = GridSizing.homeRowCap(heightDp)
+        val rows = GridSizing.resolveHomeRows(config.homeRows, heightDp, cap = homeRowCap)
+        return cols to rows
+    }
+
+    private fun resolvedAppGrid(): Pair<Int, Int> {
+        val widthDp = gridWidthDp(gridApps, 48f)
+        val heightDp = gridHeightDp(gridApps, contentHeightDp() - 40f)
+        val cols = GridSizing.resolveColumns(config.columns, widthDp, GridSizing.columnCap(widthDp))
+        val rows = GridSizing.resolveRows(config.rows, heightDp, cap = GridSizing.rowCap(heightDp))
+        return cols to rows
+    }
+
+    /** 优先用网格自身的已测量尺寸，退化时用屏幕宽度减去布局边距。 */
+    private fun gridWidthDp(grid: View, horizontalMarginsDp: Float): Float {
+        val w = grid.width
+        if (w > 0) return pxToDp(w)
+        return (displayWidthDp() - horizontalMarginsDp).coerceAtLeast(160f)
+    }
+
+    /** 优先用网格自身的已测量高度；尚未布局时（冷启动）用估算值。 */
+    private fun gridHeightDp(grid: View, fallbackDp: Float): Float {
+        val h = grid.height
+        if (h > 0) return pxToDp(h)
+        return fallbackDp.coerceAtLeast(120f)
+    }
+
+    private fun displayWidthDp(): Float {
+        val w = resources.displayMetrics.widthPixels
+        return if (w > 0) pxToDp(w) else 360f
+    }
+
+    private fun contentHeightDp(): Float {
+        val h = resources.displayMetrics.heightPixels
+        return if (h > 0) pxToDp(h) else 480f
+    }
+
+    private fun displayHeightDp(): Float = contentHeightDp()
+
+    /** 屏幕尺寸或方向变化后，重算自适应行列 */
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (!::config.isInitialized) return
+        // 布局尺寸在配置变化后才更新，等一帧再算
+        window.decorView.post {
+            if (isFinishing) return@post
+            // 视图可能尚未绑定（初始化早期收到配置变化），此时直接跳过。
+            if (!::gridHome.isInitialized || !::gridApps.isInitialized) return@post
+            val homeGrid = resolvedHomeGrid()
+            if (homeGrid.first != currentHomeGrid.first || homeGrid.second != currentHomeGrid.second) {
+                currentHomeGrid = homeGrid
+                refreshHome()
+            }
+            val appGrid = resolvedAppGrid()
+            if (appsLoaded && (appGrid.first != currentAppGrid.first || appGrid.second != currentAppGrid.second)) {
+                currentAppGrid = appGrid
+                refreshApps()
+            }
+            if (::settingsController.isInitialized) settingsController.updateValues(config)
+        }
+    }
+
+    /**
+     * Cold start is measured before the grids exist, so the first grid uses a
+     * conservative estimate. Once the window has been laid out, resolve the real
+     * panel size and re-apply the automatic grid if it changed.
+     */
+    private fun installGridLayoutHook() {
+        val target = window.decorView
+        target.viewTreeObserver.addOnGlobalLayoutListener(object :
+            android.view.ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                if (!::config.isInitialized) return
+                if (target.viewTreeObserver.isAlive) {
+                    target.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                }
+                window.decorView.post {
+                    if (isFinishing) return@post
+                    // 冷启动时该回调可能早于 setupControllers() 执行，
+                    // 控制器未创建前不要触碰它（lateinit 未初始化会崩溃）。
+                    if (!::settingsController.isInitialized) return@post
+                    val homeGrid = resolvedHomeGrid()
+                    if (homeGrid != currentHomeGrid) {
+                        currentHomeGrid = homeGrid
+                        refreshHome()
+                    }
+                    if (appsLoaded) {
+                        val appGrid = resolvedAppGrid()
+                        if (appGrid != currentAppGrid) {
+                            currentAppGrid = appGrid
+                            refreshApps()
+                        }
+                    }
+                    // 网格尺寸确定后，设置页显示的实际行列数才准确。
+                    settingsController.updateValues(config)
+                }
+            }
+        })
+    }
+
+    private fun pxToDp(px: Int): Float = px / resources.displayMetrics.density
+
     private fun refreshHome() {
         val apps = repository.loadApps()
         StartupTracer.stage("refreshHome-loadApps")
-        gridHome.configure(config.homeColumns, config.homeRows, config.iconSize)
-        val limit = config.homeColumns * config.homeRows
+        val (columns, rows) = resolvedHomeGrid()
+        currentHomeGrid = columns to rows
+        gridHome.configure(columns, rows)
+        val limit = columns * rows
         val sorted = repository.sortHomeApps(apps, limit)
         StartupTracer.stage("refreshHome-sort")
         gridHome.setApps(
@@ -784,16 +904,19 @@ class LauncherActivity : Activity() {
         appsLoaded = true
         appsAll = if (manageMode) repository.loadAllApps() else repository.loadApps()
         StartupTracer.stage("refreshApps-load")
-        gridApps.configure(config.columns, config.rows, config.iconSize)
+        val (columns, rows) = resolvedAppGrid()
+        currentAppGrid = columns to rows
+        gridApps.configure(columns, rows)
         appsPageCount =
             if (appsAll.isEmpty()) 0
-            else ceil(appsAll.size.toDouble() / (config.columns * config.rows)).toInt()
+            else ceil(appsAll.size.toDouble() / (columns * rows)).toInt()
         showAppsPage(0)
         StartupTracer.stage("refreshApps-showPage")
     }
 
     private fun showAppsPage(index: Int) {
-        val pageSize = config.columns * config.rows
+        val (columns, rows) = resolvedAppGrid()
+        val pageSize = columns * rows
         val clamped = index.coerceIn(0, (appsPageCount - 1).coerceAtLeast(0))
         val previous = appsPageIndex
         appsPageIndex = clamped
@@ -1340,11 +1463,20 @@ class LauncherActivity : Activity() {
 
         recentMessage.visibility = View.GONE
         recentGrid.visibility = View.VISIBLE
-        val columns = 4
-        val rows = (apps.size + columns - 1) / columns
-        recentGrid.configure(columns, rows, config.iconSize)
+        // 最近任务是一个底部浮层：列数按屏幕宽度自适应（手机 4 列，宽屏最多 5 列），
+        // 行数由应用数量决定，行高按图标大小与文字行高推算。
+        val density = resources.displayMetrics.density
+        val columns = GridSizing.recentColumnCap(displayWidthDp())
 
-        val rowHeight = config.iconSize + 34
+        // 行高先按单格估算，再用实际格宽算出图标大小，最后按图标大小定行高。
+        val estimatedRowPx = dp(60).coerceAtLeast(dp(48))
+        val cellWidthPx = (resources.displayMetrics.widthPixels - dp(72)).coerceAtLeast(dp(120)) / columns
+        val iconPx = recentGrid.iconPxFor(cellWidthPx, estimatedRowPx, columns, 1)
+        var rows = (apps.size + columns - 1) / columns
+        rows = rows.coerceIn(1, GridSizing.recentRowCap(displayHeightDp() * 0.4f))
+        recentGrid.configure(columns, rows)
+
+        val rowHeight = GridSizing.rowHeightDp(iconPx, density)
         recentGrid.layoutParams = recentGrid.layoutParams.apply {
             height = dp(rows * rowHeight)
         }
