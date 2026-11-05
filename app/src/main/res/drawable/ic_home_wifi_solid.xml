@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 顶部状态行 WiFi 的另一种画法：Material 实心字形（原样取自 YotaPaper - 副本 (9)）。
+
+     和 ic_home_wifi.xml（描边版）成对存在，由设置里「主页顶部 → 图标风格」切换：
+     实心这套是改造前的样子，线条那套是后来统一的笔法，两套都留着给用户自己挑。
+
+     原 path 只占视口 16/24 高，蓝牙占 20/24。缩放后两者在视口里都是 14.4/24，
+     放进 20dp 容器渲染出的视觉高度同为 12dp。
+
+     颜色写字面值 #FF1A1A1A（= @color/ink）而不是引用：minSdk 17 会让 AAPT 给低版本
+     预生成 PNG，那个流程解不了资源引用。开关状态变灰走 setColorFilter(SRC_IN)。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group
+        android:pivotX="12"
+        android:pivotY="12"
+        android:scaleX="0.90"
+        android:scaleY="0.90">
+        <path
+            android:fillColor="#FF1A1A1A"
+            android:pathData="M1,9l2,2c4.97,-4.97 13.03,-4.97 18,0l2,-2C16.93,2.93 7.08,2.93 1,9zM9,17l3,3 3,-3c-1.65,-1.66 -4.34,-1.66 -6,0zM5,13l2,2c2.76,-2.76 7.24,-2.76 10,0l2,-2C15.14,9.14 8.87,9.14 5,13z" />
+    </group>
+</vector>

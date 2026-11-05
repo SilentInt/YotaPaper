@@ -71,6 +71,8 @@ object EpdParamsStore {
     const val KEY_ANIM_ENABLE = "anim_enable"
     const val KEY_ANIM_WINDOW_MS = "anim_window_ms"
     const val KEY_ANIM_FRAME_COUNT = "anim_frame_count"
+    // 供 Xposed 模块读的调试日志开关，只该由用户手工写入；
+    // 曾经在 saveAnimParams 里写死 true，导致开过一次动画模式就永久打开且无法关闭
     const val KEY_DEBUG_LOG = "debug_log"
 
     const val AUTHORITY = "com.baoliyota.epdparams.paramsprovider"
@@ -133,7 +135,6 @@ object EpdParamsStore {
             .putInt(KEY_ANIM_WINDOW_MS, windowMs)
             .putInt(KEY_ANIM_FRAME_COUNT, frameCount)
             .putBoolean(KEY_ANIM_ENABLE, true)
-            .putBoolean(KEY_DEBUG_LOG, true)
             .apply()
         ensurePrefsReadable(context)
     }

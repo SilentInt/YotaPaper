@@ -3,7 +3,6 @@ package com.yota.launcher.ui
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.pm.ResolveInfo
 import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
@@ -11,6 +10,7 @@ import android.graphics.drawable.Drawable
 import android.os.Handler
 import android.os.Looper
 import android.util.LruCache
+import com.yota.launcher.data.AppEntry
 import com.yota.launcher.data.LauncherConfig
 import org.xmlpull.v1.XmlPullParser
 import java.io.BufferedInputStream
@@ -30,6 +30,7 @@ object IconLoader {
     private const val LINE_ART_CACHE_DIR = "eink_lineart_cache"
     private const val RAW_CACHE_DIR = "eink_lineart_raw"
     private const val RAW_HEADER_BYTES = 8
+    private const val ICON_PX = 176
 
     private val cache = LruCache<String, Drawable>(256)
     private val cacheLock = Any()
@@ -46,6 +47,15 @@ object IconLoader {
 
     @Volatile
     private var autoLineIcons: Boolean = false
+
+    // 线条图标的目标边长（像素）。
+    // 合并上游 0.7 后没有「图标大小」设置了：显示尺寸由 EInkLauncherView 按格子反算
+    // （iconPxFor），位图按 176px 生成、由 ImageView 缩放到目标尺寸 —— 这也是上游
+    // 0.7 自己的做法（它连 iconPx 字段都没有，一律走 LineIconRenderer 的 176 默认值）。
+    // 仍保留这个字段，是因为缓存 key 和磁盘文件名都要带上它，方便以后真要改成
+    // 「按格子精确生成」时不用重写缓存逻辑。
+    @Volatile
+    private var iconPx: Int = ICON_PX
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val decodeExecutor = Executors.newFixedThreadPool(2) { r ->
@@ -66,32 +76,36 @@ object IconLoader {
         val changed = config.iconPack != iconPack || autoLineChanged
         iconPack = config.iconPack
         autoLineIcons = config.autoLineIcons
+        iconPx = ICON_PX
         if (changed) {
             cacheEvictAll()
             if (autoLineChanged) clearLineArtDiskCache()
         }
     }
 
-    fun load(context: Context, info: ResolveInfo): Drawable? {
-        val packageName = info.activityInfo.packageName
-        val key = "$packageName|$iconPack|$autoLineIcons"
+    // 尺寸必须进 key：否则改完图标大小仍命中旧的 176px 位图
+    private fun cacheKey(entry: AppEntry): String =
+        "${entry.packageName}|$iconPack|$autoLineIcons|$iconPx"
+
+    fun load(context: Context, entry: AppEntry): Drawable? {
+        val key = cacheKey(entry)
         cacheGet(key)?.let { return it }
 
         var icon: Drawable? = null
 
         // 1. 最高优先级：如果选择了第三方图标包，优先从中加载
         if (iconPack.isNotEmpty()) {
-            icon = loadFromIconPack(context.packageManager, info, iconPack)
+            icon = loadFromIconPack(context.packageManager, entry, iconPack)
         }
 
         // 2. 第二优先级：如果图标包中未找到（或未选择图标包），且开启了自动绘制，则生成线条图标
         if (icon == null && autoLineIcons) {
-            icon = loadLineIcon(context, info)
+            icon = loadLineIcon(context, entry)
         }
 
         // 3. 兜底逻辑：如果都没有，则加载系统原始图标
         if (icon == null) {
-            icon = runCatching { info.loadIcon(context.packageManager) }.getOrNull()
+            icon = runCatching { entry.info.loadIcon(context.packageManager) }.getOrNull()
         }
 
         if (icon != null) cachePut(key, icon)
@@ -102,15 +116,14 @@ object IconLoader {
      * 异步加载图标：内存缓存命中时回调立即同步返回；未命中则在后台线程解码/生成，
      * 完成后切回主线程回调。冷启动首帧不再为图标解码阻塞。
      */
-    fun loadAsync(context: Context, info: ResolveInfo, callback: (Drawable?) -> Unit) {
-        val packageName = info.activityInfo.packageName
-        val key = "$packageName|$iconPack|$autoLineIcons"
+    fun loadAsync(context: Context, entry: AppEntry, callback: (Drawable?) -> Unit) {
+        val key = cacheKey(entry)
         cacheGet(key)?.let {
             callback(it)
             return
         }
         decodeExecutor.execute {
-            val drawable = load(context, info)
+            val drawable = load(context, entry)
             mainHandler.post { callback(drawable) }
         }
     }
@@ -142,11 +155,12 @@ object IconLoader {
 
     // ---- line icons -----------------------------------------------------
 
-    private fun loadLineIcon(context: Context, info: ResolveInfo): Drawable? {
-        val packageName = info.activityInfo.packageName
-        val className = info.activityInfo.name
+    private fun loadLineIcon(context: Context, entry: AppEntry): Drawable? {
+        val packageName = entry.packageName
+        val className = entry.className
         val safeName = "${packageName}_${className}".replace("[^a-zA-Z0-9_.]".toRegex(), "_")
-        val rawFile = rawCacheDir(context)?.let { File(it, "$safeName.raw") }
+        // 文件名带边长：换图标大小后不会读到另一种尺寸的旧图
+        val rawFile = rawCacheDir(context)?.let { File(it, "${safeName}_${iconPx}px.raw") }
 
         // 1. 最快的磁盘缓存：裸 ARGB 像素（无 PNG 解码开销）。
         if (rawFile != null && rawFile.exists()) {
@@ -154,24 +168,29 @@ object IconLoader {
             if (bitmap != null) return BitmapDrawable(context.resources, bitmap)
         }
 
-        // 2. 旧版 PNG 缓存迁移：读一次，转存为 raw 供后续冷启动使用。
+        // 2. 旧版 PNG 缓存迁移：旧文件是写死边长生成的，只有和当前尺寸对得上才沿用。
         val legacyPng = diskCacheDir(context)?.let { File(it, "$safeName.png") }
         if (legacyPng != null && legacyPng.exists()) {
             val bitmap = runCatching {
                 android.graphics.BitmapFactory.decodeFile(legacyPng.absolutePath)
             }.getOrNull()
-            if (bitmap != null) {
-                rawFile?.let { runCatching { saveRawBitmap(bitmap, it) } }
+            if (bitmap != null && bitmap.width == iconPx && rawFile != null) {
+                runCatching { saveRawBitmap(bitmap, rawFile) }
+                // 转存后删掉 png，否则两份缓存永久并存白占空间
+                runCatching { legacyPng.delete() }
                 return BitmapDrawable(context.resources, bitmap)
             }
+            // 尺寸对不上（用户改过图标大小）就丢弃，往下走重新生成
+            runCatching { legacyPng.delete() }
         }
 
         // 3. 从原图标生成。
-        val original = runCatching { info.loadIcon(context.packageManager) }.getOrNull()
+        val original = runCatching { entry.info.loadIcon(context.packageManager) }.getOrNull()
         val generated = if (original != null) {
-            LineIconRenderer.fromDrawable(original, resources = context.resources)
+            LineIconRenderer.fromDrawable(original, sizePx = iconPx, resources = context.resources)
         } else {
-            LineIconRenderer.draw(info.loadLabel(context.packageManager).toString(), resources = context.resources)
+            // 取不到图标时退化成画首字：名字直接用 AppEntry 带出的 label
+            LineIconRenderer.draw(entry.label, sizePx = iconPx, resources = context.resources)
         }
 
         if (generated is BitmapDrawable && rawFile != null) {
@@ -239,10 +258,10 @@ object IconLoader {
 
     // ---- icon pack loading ---------------------------------------------
 
-    private fun loadFromIconPack(pm: PackageManager, info: ResolveInfo, pack: String): Drawable? {
+    private fun loadFromIconPack(pm: PackageManager, entry: AppEntry, pack: String): Drawable? {
         val resources = ensureIconPack(pm, pack) ?: return null
-        val packageName = info.activityInfo.packageName
-        val activityName = info.activityInfo.name
+        val packageName = entry.packageName
+        val activityName = entry.className
         val simpleName = activityName.substringAfterLast('.')
 
         // 1. Exact match through the standard appfilter.xml mapping.

@@ -11,6 +11,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import com.yota.launcher.ui.ControlCenterActivity
+import com.yota.launcher.utils.LauncherExecutors
 import java.io.DataInputStream
 import java.util.concurrent.Executors
 import kotlin.math.abs
@@ -192,6 +193,9 @@ class ControlCenterService : Service() {
                 eventReaderRunning = false
                 eventProcess?.destroy()
                 eventProcess = null
+                // destroy() 只杀 su 那层，sh 是它的子进程；失败重试间隔只有 3 秒，
+                // 不补一刀孤儿进程会持续累积
+                killOrphanReader()
 
                 // 【核心修复2】出错中断后，只有在服务依然存活的情况下，才允许 3 秒后重试！
                 if (isServiceActive) {
@@ -214,11 +218,16 @@ class ControlCenterService : Service() {
         eventProcess?.destroy()
         eventProcess = null
 
-        Thread {
+        killOrphanReader()
+    }
+
+    /** 清理可能残留的读取子进程；幂等，重复调用无副作用。 */
+    private fun killOrphanReader() {
+        LauncherExecutors.io {
             runCatching {
                 Runtime.getRuntime().exec(arrayOf("su", "-c", "pkill -f 'cat /dev/input/event2'"))
             }
-        }.start()
+        }
     }
 
     override fun onDestroy() {
@@ -230,6 +239,8 @@ class ControlCenterService : Service() {
         mainHandler.removeCallbacksAndMessages(null)
 
         stopEventReader()
+        // 单线程池的线程不是 daemon，每次服务重建都会漏一个
+        eventReaderExecutor.shutdownNow()
         runCatching { unregisterReceiver(screenReceiver) }
         runCatching { unregisterReceiver(panelStateReceiver) }
 

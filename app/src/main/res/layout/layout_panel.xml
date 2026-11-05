@@ -58,39 +58,13 @@
                 android:textSize="12sp"
                 android:visibility="gone" />
 
-            <!-- 纯 XML 拼接的黑白点阵电池图标 -->
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-                <!-- 电池外框 -->
-                <FrameLayout
-                    android:layout_width="22dp"
-                    android:layout_height="12dp"
-                    android:background="#000000"
-                    android:padding="1.5dp">
-                    <!-- 内部电量轨道 -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:background="#FFFFFF"
-                        android:orientation="horizontal"
-                        android:weightSum="100">
-                        <View
-                            android:id="@+id/view_battery_fill"
-                            android:layout_width="0dp"
-                            android:layout_height="match_parent"
-                            android:layout_weight="85"
-                            android:background="#000000" />
-                    </LinearLayout>
-                </FrameLayout>
-                <!-- 电池正极触头 -->
-                <View
-                    android:layout_width="2dp"
-                    android:layout_height="4dp"
-                    android:background="#000000" />
-            </LinearLayout>
+            <!-- 电池图标：EinkWallpaper 竖屏时钟同款（圆角描边外框 + 圆角正极凸点 +
+                 四格分段电量），几何在 com.yota.launcher.ui.BatteryIconView 里，
+                 24dp x 12dp 是 52:26 的原设计比例 -->
+            <com.yota.launcher.ui.BatteryIconView
+                android:id="@+id/view_battery_icon"
+                android:layout_width="24dp"
+                android:layout_height="12dp" />
 
             <!-- 电量百分比 -->
             <TextView
@@ -103,6 +77,34 @@
                 android:textStyle="bold"
                 tools:text="85%" />
         </LinearLayout>
+
+        <!-- 新增：电源图标 (在背屏单开左侧) -->
+        <ImageView
+            android:id="@+id/btn_power_top"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_alignBottom="@id/tv_date"
+            android:layout_toStartOf="@id/btn_epd_only"
+            android:layout_marginEnd="20dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:contentDescription="电源"
+            android:focusable="true"
+            android:src="@drawable/ic_power" />
+
+        <!-- 新增：背屏单开图标 (在飞行模式左侧) -->
+        <ImageView
+            android:id="@+id/btn_epd_only"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_alignBottom="@id/tv_date"
+            android:layout_toStartOf="@id/btn_airplane_mode"
+            android:layout_marginEnd="20dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:contentDescription="背屏单开"
+            android:focusable="true"
+            android:src="@drawable/ic_epd_only_off" />
 
         <!-- 飞行模式图标：默认显示关闭状态(白底黑框) -->
         <ImageView

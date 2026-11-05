@@ -30,6 +30,7 @@ import com.yota.launcher.LauncherActivity
 import com.yota.launcher.R
 import com.yota.launcher.data.LauncherConfigStore
 import java.util.Locale
+import com.yota.launcher.utils.LauncherExecutors
 
 /**
  * 集成在 Launcher 内的系统刷新参数管理器。
@@ -66,6 +67,10 @@ class EpdManagerActivity : Activity() {
     private val requestExport = 101
     private val requestImport = 102
 
+    // onCreate 已经加载过一次，首次 onResume 不必重复；导入返回时 onActivityResult 自己会刷
+    private var firstResume = true
+    private var skipResumeReload = false
+
     private data class AppInfo(val label: String, val icon: Drawable?)
 
     // ------------------------------------------------------------------ Lifecycle
@@ -77,6 +82,20 @@ class EpdManagerActivity : Activity() {
         searchEdit.clearFocus()
         rootView.isFocusableInTouchMode = true
         rootView.requestFocus()
+        loadData()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 控制中心等处改过参数后系统 Provider 已变，本页缓存的 entries 是旧的，重读一遍
+        if (firstResume) {
+            firstResume = false
+            return
+        }
+        if (skipResumeReload) {
+            skipResumeReload = false
+            return
+        }
         loadData()
     }
 
@@ -263,7 +282,7 @@ class EpdManagerActivity : Activity() {
         if (newValue) {
             toast("已开启，正在同步并应用…")
             val launcherComponent = ComponentName(this, LauncherActivity::class.java).toString()
-            Thread { EpdParamsStore.syncAndApply(this, launcherComponent) }.start()
+            LauncherExecutors.io { EpdParamsStore.syncAndApply(this, launcherComponent) }
         } else {
             toast("已关闭自动同步与应用")
         }
@@ -272,7 +291,7 @@ class EpdManagerActivity : Activity() {
     // ------------------------------------------------------------------ Data
 
     private fun loadData() {
-        Thread {
+        LauncherExecutors.io {
             val list = EpdParamsStore.load(this)
             if (allPackages.isEmpty()) {
                 allPackages = loadAllPackages()
@@ -292,7 +311,7 @@ class EpdManagerActivity : Activity() {
                 entries = list
                 render()
             }
-        }.start()
+        }
     }
 
     private fun loadAllPackages(): List<String> {
@@ -571,6 +590,8 @@ class EpdManagerActivity : Activity() {
         textSize = 22f
         setTextColor(color(R.color.ink))
         gravity = Gravity.CENTER
+        // toggleKey 靠这个 tag 反查勾选框；否则勾一下就得重建整页
+        tag = key
     }
 
     private fun cardBackground(): GradientDrawable = GradientDrawable().apply {
@@ -627,9 +648,17 @@ class EpdManagerActivity : Activity() {
     }
 
     private fun toggleKey(key: String) {
-        if (selectedKeys.contains(key)) selectedKeys.remove(key) else selectedKeys.add(key)
+        // 只翻勾选框和计数，不调 render()：列表是全部已装应用一次性铺开的，
+        // 重建一次要重造上千个 View 并触发整屏重刷
+        val checked = if (selectedKeys.contains(key)) {
+            selectedKeys.remove(key)
+            false
+        } else {
+            selectedKeys.add(key)
+            true
+        }
+        container.findViewWithTag<TextView>(key)?.text = if (checked) "☑" else "☐"
         selectedCountText.text = "已选 ${selectedKeys.size} 项"
-        render()
     }
 
     private fun selectedEntries(): List<EpdEntry> {
@@ -678,7 +707,7 @@ class EpdManagerActivity : Activity() {
     }
 
     private fun applySelection(targets: List<EpdEntry>, transform: (EpdEntry) -> EpdEntry?) {
-        Thread {
+        LauncherExecutors.io {
             var ok = 0
             val newList = entries.toMutableList()
             for (e in targets) {
@@ -711,18 +740,18 @@ class EpdManagerActivity : Activity() {
                 selectedKeys.clear()
                 loadData()
             }
-        }.start()
+        }
     }
 
     private fun softDeleteEntry(e: EpdEntry) {
-        Thread {
+        LauncherExecutors.io {
             val providerOk = EpdParamsStore.softDeleteInProvider(this, e.activity)
             EpdParamsStore.save(this, entries.filter { it.activity != e.activity })
             runOnUiThread {
                 toast(if (providerOk) "已删除（占位符）：${e.activity}" else "本地已移除（Provider 行不存在或已是占位符）")
                 loadData()
             }
-        }.start()
+        }
     }
 
     // ------------------------------------------------------------------ Export / import
@@ -756,8 +785,15 @@ class EpdManagerActivity : Activity() {
         if (resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         when (requestCode) {
-            requestExport -> writeExport(uri)
-            requestImport -> readImport(uri)
+            // 导出不改数据、导入自己会刷新，都不必让 resume 再整页重建一遍
+            requestExport -> {
+                writeExport(uri)
+                skipResumeReload = true
+            }
+            requestImport -> {
+                readImport(uri)
+                skipResumeReload = true
+            }
         }
     }
 
@@ -771,7 +807,7 @@ class EpdManagerActivity : Activity() {
     }
 
     private fun readImport(uri: Uri) {
-        Thread {
+        LauncherExecutors.io {
             val result = runCatching {
                 val text = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
                 val list = parseJson(text)
@@ -798,7 +834,7 @@ class EpdManagerActivity : Activity() {
                 toast(result)
                 loadData()
             }
-        }.start()
+        }
     }
 
     private fun exportJson(items: List<EpdEntry>): String {
@@ -1003,7 +1039,7 @@ class EpdManagerActivity : Activity() {
                 )
                 val animWindowMs = readValue(animSteppers[0]).coerceIn(animSteppers[0].min, animSteppers[0].max)
                 val animFrameCount = readValue(animSteppers[1]).coerceIn(animSteppers[1].min, animSteppers[1].max)
-                Thread {
+                LauncherExecutors.io {
                     val ok: Boolean
                     if (selectedMode == 2) {
                         // 动画模式：先占位符化删除系统 Provider 行，再只写本地供 Xposed 读取。
@@ -1033,7 +1069,7 @@ class EpdManagerActivity : Activity() {
                         toast(if (ok) "已保存" else "保存失败")
                         loadData()
                     }
-                }.start()
+                }
             }
             .setNegativeButton("取消", null)
             .show()

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 顶部块与分割线之间的留白。
+         分栏风格把 block 的 marginTop 也设成同一个值：上下留白相等时，
+         顶部块在「屏幕顶 → 分割线」之间正好视觉居中，且与块高无关。 -->
+    <dimen name="home_top_gap_classic">32dp</dimen>
+    <dimen name="home_top_gap_split">72dp</dimen>
+</resources>

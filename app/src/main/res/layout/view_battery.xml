@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 经典 / 分栏两套顶部共用的电池图标，两种画法由设置里「主页顶部 → 图标风格」切换：
+     线条版（EinkWallpaper 竖屏时钟同款：圆角描边外框 + 圆角凸点 + 四格电量）
+     实心版（改造前的方角黑框 + 连续填充 + 方帽）。
+     造型全部在 com.yota.launcher.ui.BatteryIconView 里用几何图元画，控件按自身尺寸缩放。
+
+     尺寸取 22dp x 12dp：宽度是两套的公共值（20dp 框 + 2dp 帽子），高度按实心版的
+     12dp 给 —— 线条版只有 11dp 高，会在里面居中留一行像素，不影响行内对齐。
+
+     用法：<include android:id="@+id/xxxBatteryIcon" layout="@layout/view_battery" />，
+     拿到的就是 BatteryIconView，setPercent / setBlockStyle 直接用；两套各 include 一次，
+     include 的 id 会盖掉根节点 id，不会撞。 -->
+<com.yota.launcher.ui.BatteryIconView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="22dp"
+    android:layout_height="12dp" />

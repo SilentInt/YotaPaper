@@ -45,7 +45,8 @@ public final class EpdPageTurnHook {
     private static boolean enable = true;
     private static int animWindowMs = 1200;
     private static int animFrameCount = 15;
-    private static boolean debugLog = true;
+    // install() 一定会覆盖这个默认值；保持 false，避免将来新增调用点漏传参时静默变成常开
+    private static boolean debugLog = false;
 
     private static Set<String> targetActivities = new HashSet<>();
 
@@ -92,16 +93,20 @@ public final class EpdPageTurnHook {
                 }
                 Object arg = param.args[0];
                 if (!(arg instanceof MotionEvent)) {
-                    log("input: non-motion event " + (arg == null ? "null" : arg.getClass().getName())
-                            + " args=" + param.args.length);
+                    if (debugLog) {
+                        log("input: non-motion event " + (arg == null ? "null" : arg.getClass().getName())
+                                + " args=" + param.args.length);
+                    }
                     return;
                 }
 
                 MotionEvent ev = (MotionEvent) arg;
                 SwipeTracker tracker = trackerFor(param.thisObject);
                 if (!isTargetWindow(tracker, param.thisObject)) {
-                    log("input: ignored, window not target activity=" + tracker.activityName
-                            + " action=" + ev.getActionMasked());
+                    if (debugLog) {
+                        log("input: ignored, window not target activity=" + tracker.activityName
+                                + " action=" + ev.getActionMasked());
+                    }
                     return;
                 }
 
@@ -111,31 +116,36 @@ public final class EpdPageTurnHook {
                 if (action == MotionEvent.ACTION_DOWN) {
                     int vw = viewWidth(param.thisObject);
                     tracker.onMotionEvent(ev, vw);
-                    log("input DOWN rawX=" + ev.getRawX() + " rawY=" + ev.getRawY()
-                            + " viewW=" + vw
-                            + " vri=" + vriHex + " activity=" + tracker.activityName);
+                    if (debugLog) {
+                        log("input DOWN rawX=" + ev.getRawX() + " rawY=" + ev.getRawY()
+                                + " viewW=" + vw
+                                + " vri=" + vriHex + " activity=" + tracker.activityName);
+                    }
                     return;
                 }
 
                 if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
                     int vw = viewWidth(param.thisObject);
                     boolean tap = tracker.onMotionEvent(ev, vw);
-                    float totalX = ev.getRawX() - tracker.downX();
-                    float totalY = ev.getRawY() - tracker.downY();
-                    String side = ev.getRawX() < (vw > 0 ? vw / 2f : 540f) ? "LEFT" : "RIGHT";
-                    log("input UP/CANCEL action=" + action
-                            + " rawX=" + ev.getRawX() + " rawY=" + ev.getRawY()
-                            + " totalX=" + totalX + " totalY=" + totalY
-                            + " side=" + side
-                            + " vri=" + vriHex);
-                    if (tap) {
-                        log("tap DETECTED side=" + side
-                                + " dir=" + tracker.direction()
-                                + " vri=" + vriHex + " pending=" + tracker.pending());
-                    } else {
-                        log("tap NOT detected: |totalX|=" + Math.abs(totalX)
-                                + " |totalY|=" + Math.abs(totalY)
-                                + " slop=" + SwipeTracker.TAP_SLOP_PX);
+                    // 日志参数拼接是急切求值，必须整块包起来，否则关掉开关也照样建字符串
+                    if (debugLog) {
+                        float totalX = ev.getRawX() - tracker.downX();
+                        float totalY = ev.getRawY() - tracker.downY();
+                        String side = ev.getRawX() < (vw > 0 ? vw / 2f : 540f) ? "LEFT" : "RIGHT";
+                        log("input UP/CANCEL action=" + action
+                                + " rawX=" + ev.getRawX() + " rawY=" + ev.getRawY()
+                                + " totalX=" + totalX + " totalY=" + totalY
+                                + " side=" + side
+                                + " vri=" + vriHex);
+                        if (tap) {
+                            log("tap DETECTED side=" + side
+                                    + " dir=" + tracker.direction()
+                                    + " vri=" + vriHex + " pending=" + tracker.pending());
+                        } else {
+                            log("tap NOT detected: |totalX|=" + Math.abs(totalX)
+                                    + " |totalY|=" + Math.abs(totalY)
+                                    + " slop=" + SwipeTracker.TAP_SLOP_PX);
+                        }
                     }
                 }
             }

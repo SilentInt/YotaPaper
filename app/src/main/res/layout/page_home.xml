@@ -6,115 +6,304 @@
                 android:layout_height="match_parent"
                 android:orientation="vertical">
 
-                <TextView
-                    android:id="@+id/textDate"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="56dp"
-                    android:gravity="center"
-                    android:fontFamily="serif"
-                    android:text="8月24日 · 周一"
-                    android:textColor="@color/gray"
-                    android:textSize="14sp" />
-
-                <TextView
-                    android:id="@+id/textTime"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:gravity="center"
-                    android:fontFamily="serif"
-                    android:text="00:00"
-                    android:textColor="@color/ink"
-                    android:textSize="76sp" />
-
+                <!-- ===== 顶部风格 0：经典居中（原布局，保持不动） ===== -->
                 <LinearLayout
-                    android:id="@+id/statusBar"
+                    android:id="@+id/homeTopClassic"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:gravity="center"
-                    android:orientation="horizontal">
+                    android:orientation="vertical">
 
                     <TextView
-                        android:id="@+id/statusBattery"
-                        android:layout_width="wrap_content"
+                        android:id="@+id/textDate"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:layout_marginTop="56dp"
+                        android:gravity="center"
                         android:fontFamily="serif"
-                        android:text=""
+                        android:text="8月24日 · 周一"
                         android:textColor="@color/gray"
-                        android:textSize="13sp" />
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:id="@+id/textTime"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:gravity="center"
+                        android:fontFamily="serif"
+                        android:text="00:00"
+                        android:textColor="@color/ink"
+                        android:textSize="76sp" />
 
                     <LinearLayout
-                        android:id="@+id/statusWifiItem"
-                        android:layout_width="wrap_content"
+                        android:id="@+id/statusBar"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="18dp"
-                        android:gravity="center_vertical"
+                        android:layout_marginTop="6dp"
+                        android:gravity="center"
                         android:orientation="horizontal">
 
-                        <ImageView
-                            android:id="@+id/statusWifiIcon"
-                            android:layout_width="16dp"
-                            android:layout_height="16dp"
-                            android:contentDescription="@string/quick_wifi"
-                            android:src="@drawable/ic_wifi" />
-
-                        <TextView
-                            android:id="@+id/statusWifiText"
+                        <LinearLayout
+                            android:id="@+id/statusBatteryItem"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="5dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <include
+                                android:id="@+id/statusBatteryIcon"
+                                layout="@layout/view_battery" />
+
+                            <TextView
+                                android:id="@+id/statusBattery"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="6dp"
+                                android:fontFamily="serif"
+                                android:text=""
+                                android:textColor="@color/gray"
+                                android:textSize="13sp" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/statusWifiItem"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="18dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <ImageView
+                                android:id="@+id/statusWifiIcon"
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:contentDescription="@string/quick_wifi"
+                                android:src="@drawable/ic_home_wifi" />
+
+                            <TextView
+                                android:id="@+id/statusWifiText"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="5dp"
+                                android:fontFamily="serif"
+                                android:text=""
+                                android:textColor="@color/gray"
+                                android:textSize="13sp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/statusNetwork"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="18dp"
                             android:fontFamily="serif"
                             android:text=""
                             android:textColor="@color/gray"
-                            android:textSize="13sp" />
-                    </LinearLayout>
+                            android:textSize="13sp"
+                            android:visibility="gone" />
 
-                    <TextView
-                        android:id="@+id/statusNetwork"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="18dp"
-                        android:fontFamily="serif"
-                        android:text=""
-                        android:textColor="@color/gray"
-                        android:textSize="13sp"
-                        android:visibility="gone" />
-
-                    <LinearLayout
-                        android:id="@+id/statusBtItem"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="18dp"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal">
-
-                        <ImageView
-                            android:id="@+id/statusBtIcon"
-                            android:layout_width="16dp"
-                            android:layout_height="16dp"
-                            android:contentDescription="@string/quick_bluetooth"
-                            android:src="@drawable/ic_bluetooth" />
-
-                        <TextView
-                            android:id="@+id/statusBtText"
+                        <LinearLayout
+                            android:id="@+id/statusBtItem"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="5dp"
-                            android:fontFamily="serif"
-                            android:text=""
-                            android:textColor="@color/gray"
-                            android:textSize="13sp" />
+                            android:layout_marginStart="18dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <ImageView
+                                android:id="@+id/statusBtIcon"
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:contentDescription="@string/quick_bluetooth"
+                                android:src="@drawable/ic_home_bt" />
+
+                            <TextView
+                                android:id="@+id/statusBtText"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="5dp"
+                                android:fontFamily="serif"
+                                android:text=""
+                                android:textColor="@color/gray"
+                                android:textSize="13sp" />
+                        </LinearLayout>
                     </LinearLayout>
                 </LinearLayout>
 
-                <View
+                <!-- ===== 顶部风格 1：左右分栏（时间日期靠左，电量/WiFi/蓝牙竖排靠右） =====
+                     左列用 0dp + weight 吃掉剩余宽度：时间再宽也只会被裁在自己格子里，
+                     不会把图标列挤过来、更不会挤出屏幕（之前左列是 wrap_content，
+                     宽度全靠剩余空间，字体一宽间隔就被吃光，两个块直接贴在一起）。
+                     最小间隔 28dp 写在右列自己身上，权重区吃不掉。 -->
+                <LinearLayout
+                    android:id="@+id/homeTopSplit"
                     android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginLeft="48dp"
-                    android:layout_marginRight="48dp"
-                    android:layout_marginTop="32dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="24dp"
+                    android:layout_marginEnd="24dp"
+                    android:layout_marginTop="@dimen/home_top_gap_split"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <!-- 内层保持 wrap_content，日期才能居中于「时间的宽度」 -->
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_horizontal"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/textTimeSplit"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:includeFontPadding="false"
+                                android:maxLines="1"
+                                android:text="00:00"
+                                android:textColor="@color/ink"
+                                android:textSize="60sp" />
+
+                            <TextView
+                                android:id="@+id/textDateSplit"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:fontFamily="serif"
+                                android:text="8月24日 · 周一"
+                                android:textColor="@color/gray"
+                                android:textSize="14sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- 时间与图标之间的竖向虚线。高度 match_parent 由 LinearLayout 的
+                         forceUniformHeight 按整行高度补齐，不用写死数值 -->
+                    <View
+                        android:layout_width="2dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginStart="18dp"
+                        android:layout_marginEnd="18dp"
+                        android:background="@drawable/bg_divider_dash_v" />
+
+                    <!-- 右列：电量 / 蓝牙 / WiFi 竖排，整列垂直居中于左列。
+                         三行统一成「22dp 宽的图标格 + 20dp 行高」：电池块是
+                         22dp 宽、12dp 高（20dp 框 + 2dp 帽子，见 view_battery.xml），
+                         比 20dp 的图标又宽又矮，不统一的话三行的图标中心和
+                         文字起点会各差几个 dp。 -->
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:gravity="start"
+                        android:orientation="vertical">
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="20dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <include
+                                android:id="@+id/splitBatteryIcon"
+                                layout="@layout/view_battery" />
+
+                            <!-- 数字和 % 的字形高度比汉字矮一截，同一 13sp 下会显小，
+                                 单独放两号让视觉高度跟旁边的中文状态文字齐平。
+                                 三行的文字框统一 48dp + gravity=end：文字右对齐成一条齐头线，
+                                 图标在左边也成一条竖线，整体像两列表格 -->
+                            <TextView
+                                android:id="@+id/splitBatteryText"
+                                android:layout_width="48dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="6dp"
+                                android:fontFamily="serif"
+                                android:gravity="center_vertical|end"
+                                android:maxLines="1"
+                                android:text=""
+                                android:textColor="@color/gray"
+                                android:textSize="15sp" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/splitBtItem"
+                            android:layout_width="wrap_content"
+                            android:layout_height="20dp"
+                            android:layout_marginTop="14dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <ImageView
+                                android:id="@+id/splitBtIcon"
+                                android:layout_width="22dp"
+                                android:layout_height="20dp"
+                                android:contentDescription="@string/quick_bluetooth"
+                                android:scaleType="fitCenter"
+                                android:src="@drawable/ic_home_bt" />
+
+                            <TextView
+                                android:id="@+id/splitBtText"
+                                android:layout_width="48dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="6dp"
+                                android:fontFamily="serif"
+                                android:gravity="center_vertical|end"
+                                android:maxLines="1"
+                                android:text=""
+                                android:textColor="@color/gray"
+                                android:textSize="13sp" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/splitWifiItem"
+                            android:layout_width="wrap_content"
+                            android:layout_height="20dp"
+                            android:layout_marginTop="14dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <!-- 22dp 宽 + fitCenter：20dp 的图标在格子里居中，
+                                 中心线和右边文字的起点都跟电池那行一致 -->
+                            <ImageView
+                                android:id="@+id/splitWifiIcon"
+                                android:layout_width="22dp"
+                                android:layout_height="20dp"
+                                android:contentDescription="@string/quick_wifi"
+                                android:scaleType="fitCenter"
+                                android:src="@drawable/ic_home_wifi" />
+
+                            <TextView
+                                android:id="@+id/splitWifiText"
+                                android:layout_width="48dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="6dp"
+                                android:fontFamily="serif"
+                                android:gravity="center_vertical|end"
+                                android:maxLines="1"
+                                android:text=""
+                                android:textColor="@color/gray"
+                                android:textSize="13sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- 边距与下方 gridHome 保持一致（24dp），横线两端才与网格左右边界齐平。
+                     不要在这里写死 48dp：原值比网格宽 24dp，两端各偏出去一截。
+                     marginTop 是经典风格的值，分栏风格在 applyHomeTopStyle() 里换成
+                     home_top_gap_split，让上下留白相等、顶部块视觉居中。
+                     线高 0.5dp：density=2 时正好 1px，与网格线（dividerPaint 1f px）同粗；
+                     写成 1dp 会比网格线粗一倍，同屏对比很明显。 -->
+                <View
+                    android:id="@+id/homeTopDivider"
+                    android:layout_width="match_parent"
+                    android:layout_height="0.5dp"
+                    android:layout_marginStart="24dp"
+                    android:layout_marginEnd="24dp"
+                    android:layout_marginTop="@dimen/home_top_gap_classic"
                     android:background="@color/hairline" />
 
                 <com.yota.launcher.ui.EInkLauncherView
