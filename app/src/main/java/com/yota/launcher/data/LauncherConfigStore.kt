@@ -15,7 +15,7 @@ class LauncherConfigStore(context: Context) {
             showHomeDividers = prefs.getBoolean("show_home_dividers", true),
             showAppDividers = prefs.getBoolean("show_app_dividers", true),
             homeTopStyle = prefs.getInt("home_top_style", 0),
-            homeTopIconStyle = prefs.getInt("home_top_icon_style", 0),
+            homeTopIconStyle = prefs.getInt("home_top_icon_style", 1),
             recentWindowMs = prefs.getLong("recent_window_ms", 30 * 60_000L),
             recentCancelBackToApp = prefs.getBoolean("recent_cancel_back_to_app", true),
             iconPack = prefs.getString("icon_pack", "") ?: "",
@@ -33,7 +33,7 @@ class LauncherConfigStore(context: Context) {
             controlCenterAnimation = prefs.getBoolean("control_center_animation", true),
             controlCenterVibration = prefs.getBoolean("control_center_vibration", false),
             controlCenterEpd = prefs.getBoolean("control_center_epd", true),
-            controlCenterBatteryStyle = prefs.getInt("control_center_battery_style", 0)
+            controlCenterBatteryStyle = prefs.getInt("control_center_battery_style", 1)
         )
     }
 

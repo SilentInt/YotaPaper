@@ -225,6 +225,34 @@
                 android:textColor="#FFFFFF"
                 android:textSize="11sp"
                 tools:text="微信读书" />
+            <!-- 首次切动画未生效时：临时顶替 App 名徽标，显示提示 + 立即重启 -->
+            <LinearLayout
+                android:id="@+id/hint_epd_2"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:visibility="gone">
+                <TextView
+                    android:id="@+id/tv_epd_2_msg"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="首次切换需重启"
+                    android:textColor="#8A8A8A"
+                    android:textSize="11sp" />
+                <TextView
+                    android:id="@+id/btn_epd_restart_app"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bg_btn_clear"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="2dp"
+                    android:text="立即重启"
+                    android:textColor="#000000"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- 模式切换 -->
@@ -241,35 +269,44 @@
         </LinearLayout>
 
 
-        <!-- 动画模式提示与重启按钮 -->
+        <!-- 动画波形选择：已选动画即出现（未生效时配合上面的重启提示，
+             生效后可直接即时切换）。去掉标题、紧贴模式行，减小卡片高度。 -->
         <LinearLayout
-            android:id="@+id/hint_epd_2"
+            android:id="@+id/epd_wave_container"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:layout_marginTop="8dp"
+            android:orientation="vertical"
+            android:layout_marginTop="0dp"
             android:visibility="gone">
-            <TextView
-                android:id="@+id/tv_epd_2_msg"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="动画模式需重启应用生效"
-                android:textColor="#8A8A8A"
-                android:textSize="11sp" />
 
-            <TextView
-                android:id="@+id/btn_epd_restart_app"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:background="@drawable/bg_btn_clear"
-                android:paddingHorizontal="10dp"
-                android:paddingVertical="2dp"
-                android:text="立即重启"
-                android:textColor="#000000"
-                android:textSize="11sp"
-                android:textStyle="bold" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="36dp"
+                android:orientation="horizontal"
+                android:background="@drawable/bg_btn_off">
+
+                <TextView
+                    android:id="@+id/btn_epd_wave_hi"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="平滑翻页"
+                    android:textColor="#000000"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/btn_epd_wave_full"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="黑闪翻页"
+                    android:textColor="#000000"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- 具体参数 -->

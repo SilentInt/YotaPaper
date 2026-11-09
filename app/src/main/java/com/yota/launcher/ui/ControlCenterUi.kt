@@ -684,6 +684,30 @@ class ControlCenterUi(
                 }
             }
         }
+
+        // 翻页动画的画面质量。只写本地动画配置，不碰系统 Provider 的刷新档位，
+        // 所以「高画质」和「动画」可以同时成立。
+        rootView.findViewById<View>(R.id.btn_epd_wave_hi)?.setOnClickListener {
+            simulateClickFeedback(it)
+            saveAnimWave(EpdParamsStore.ANIM_WAVE_FOLLOW)
+        }
+        rootView.findViewById<View>(R.id.btn_epd_wave_full)?.setOnClickListener {
+            simulateClickFeedback(it)
+            saveAnimWave(EpdParamsStore.ANIM_WAVE_FULL_DITHER)
+        }
+    }
+
+    /** 只改**当前这个前台 Activity**的波形，保留其它 App 各自的设置。 */
+    private fun saveAnimWave(wave: Int) {
+        val target = currentEpdEntry?.activity ?: return
+        LauncherExecutors.io {
+            // 早先这里写的是全局 anim_wave：给微信读书选黑条带，阅读也跟着变。
+            // 卡片针对的是单个前台 Activity，波形也必须只落在这一条上。
+            EpdParamsStore.setAnimWave(activity, target, wave)
+            // 逐条按自己的波形刷新 Provider 行：高画质要有，黑条带必须没有。
+            EpdParamsStore.syncAnimProviderRows(activity)
+            mainHandler.post { updateEpdUiState() }
+        }
     }
 
     private fun pullEpdState() {
@@ -846,28 +870,52 @@ class ControlCenterUi(
         val hint2Container = rootView.findViewById<View>(R.id.hint_epd_2)
         val hint2Msg = rootView.findViewById<TextView>(R.id.tv_epd_2_msg)
         val btnRestart = rootView.findViewById<View>(R.id.btn_epd_restart_app)
+        val waveContainer = rootView.findViewById<View>(R.id.epd_wave_container)
+        val waveHi = rootView.findViewById<TextView>(R.id.btn_epd_wave_hi)
+        val waveFull = rootView.findViewById<TextView>(R.id.btn_epd_wave_full)
+        // App 名徽标与「需重启」提示共用标题行右侧，二选一显示。
+        val appName = rootView.findViewById<View>(R.id.tv_epd_app_name)
 
         if (entry.mode == 2) {
             if (isCheckingPid) {
                 hint2Container?.visibility = View.VISIBLE
-                hint2Msg?.text = "正在匹配底层进程状态..."
+                appName?.visibility = View.GONE
+                hint2Msg?.text = "匹配进程中…"
                 btnRestart?.visibility = View.GONE
+                // 进程状态还没确定，波形区先不出现，避免卡片跳来跳去
+                waveContainer?.visibility = View.GONE
             } else {
                 val stateKey = "${currentEpdPid}_${currentEpdEntry?.activity}"
                 val startMode = processStartModes[stateKey] ?: 0
 
                 if (startMode == 2) {
-                    // 当底层接管动画已经生效时，彻底隐藏提示框，不再显示冗余文字
+                    // 动画已生效：隐藏重启提示、恢复 App 名徽标，保留风格切换。
                     hint2Container?.visibility = View.GONE
+                    appName?.visibility = View.VISIBLE
+                    waveContainer?.visibility = View.VISIBLE
+                    val isFull = EpdParamsStore.animWaveFor(activity, entry.activity) ==
+                            EpdParamsStore.ANIM_WAVE_FULL_DITHER
+                    setActive(waveHi, !isFull)
+                    setActive(waveFull, isFull)
                 } else {
-                    // 未生效时，依然保留重启提示
+                    // 未生效：标题行右侧显示「首次切换需重启 + 立即重启」，顶替 App 名。
                     hint2Container?.visibility = View.VISIBLE
-                    hint2Msg?.text = "首次切换动画模式需重启生效"
+                    appName?.visibility = View.GONE
+                    hint2Msg?.text = "首次切换需重启"
                     btnRestart?.visibility = View.VISIBLE
+
+                    // 反正要重启一次，正好在这里把画面质量定下来，不用再进设置页
+                    waveContainer?.visibility = View.VISIBLE
+                    val isFull = EpdParamsStore.animWaveFor(activity, entry.activity) ==
+                            EpdParamsStore.ANIM_WAVE_FULL_DITHER
+                    setActive(waveHi, !isFull)
+                    setActive(waveFull, isFull)
                 }
             }
         } else {
             hint2Container?.visibility = View.GONE
+            appName?.visibility = View.VISIBLE
+            waveContainer?.visibility = View.GONE
         }
 
         rootView.findViewById<View>(R.id.epd_params_container)?.visibility = if (entry.mode == 1) View.VISIBLE else View.GONE
@@ -891,16 +939,11 @@ class ControlCenterUi(
     private fun saveAndApplyEpdEntry() {
         val entry = currentEpdEntry ?: return
         LauncherExecutors.io {
-            val entries = EpdParamsStore.load(activity).toMutableList()
-            entries.removeAll { it.activity == entry.activity }
-            entries.add(entry)
-            EpdParamsStore.save(activity, entries)
-
-            if (entry.mode == 2) {
-                EpdParamsStore.softDeleteInProvider(activity, entry.activity)
-            } else {
-                EpdParamsStore.applyToProvider(activity, entry)
-            }
+            // 走统一入口：本地条目 + Provider 档位 + 动画参数一次写完。
+            // 早先这里只写条目本身、不写动画参数（anim_enable / 帧数 / 波形），
+            // 于是「在控制中心选动画 → 重启」什么都不会发生，而设置页里做同样的
+            // 事却正常 —— 两条 UI 各写一半配置导致的。
+            EpdParamsStore.setMode(activity, entry)
         }
     }
 

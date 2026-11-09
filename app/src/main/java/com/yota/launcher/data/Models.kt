@@ -9,7 +9,7 @@ data class LauncherConfig(
     val showHomeDividers: Boolean = true,   // home grid only
     val showAppDividers: Boolean = true,    // app drawer grid only
     val homeTopStyle: Int = 0,              // 主页顶部风格：0=经典居中, 1=左右分栏
-    val homeTopIconStyle: Int = 0,          // 顶部状态行图标风格：0=线条, 1=实心
+    val homeTopIconStyle: Int = 1,          // 顶部状态行图标风格：0=线条, 1=实心（默认实心）
     val recentWindowMs: Long = 30 * 60_000L, // recent tasks: 0 = all, else time window
     val recentCancelBackToApp: Boolean = true, // recent tasks cancel action
     val iconPack: String = "",              // empty = system default icons
@@ -28,7 +28,7 @@ data class LauncherConfig(
     val controlCenterAnimation: Boolean = true, // 控制中心翻页动画
     val controlCenterVibration: Boolean = false,  // 控制中心触摸震动
     val controlCenterEpd: Boolean = true,         // 控制中心EPD刷新模块
-    val controlCenterBatteryStyle: Int = 0        // 控制中心电池图标：0=线条, 1=实心
+    val controlCenterBatteryStyle: Int = 1        // 控制中心电池图标：0=线条, 1=实心（默认实心）
 ) {
     // 图标大小档位已随上游 0.7 一并移除：尺寸由 GridSizing 按实际格子反算，
     // 手动档位（40/50/60/70）不再存在

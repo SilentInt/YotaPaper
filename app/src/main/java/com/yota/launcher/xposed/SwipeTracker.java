@@ -33,6 +33,9 @@ final class SwipeTracker {
     /** 已观察到的 EPD 参数调用次数，用于节流日志。 */
     int epdCallCount = 0;
 
+    /** 上一次真正注入动画的时间，供「同一次点击的多个参数入口」复用。 */
+    long lastInjectAt = 0L;
+
     /**
      * 处理输入事件。viewWidth 用于把屏幕分成左右两半判定点击方向：
      * 左侧点击 = 上一页（DIR_RIGHT，动画从左缘扫到右缘）；
@@ -55,14 +58,25 @@ final class SwipeTracker {
                 totalX = ev.getRawX() - downX;
                 totalY = ev.getRawY() - downY;
                 if (Math.abs(totalX) <= TAP_SLOP_PX && Math.abs(totalY) <= TAP_SLOP_PX) {
+                    // 点按：按左右半屏判定
                     tap = true;
                     float half = viewWidth > 0 ? viewWidth / 2f : 540f;
                     direction = ev.getRawX() < half ? DIR_RIGHT : DIR_LEFT;
-                    pending = true;
-                    tapTime = System.currentTimeMillis();
-                    return true;
+                } else if (Math.abs(totalX) > TAP_SLOP_PX
+                        && Math.abs(totalX) > Math.abs(totalY)) {
+                    // 左右滑动翻页也要给方向：往左划 = 下一页（内容自右向左推），
+                    // 往右划 = 上一页。之前只处理点按，滑动翻页时方向一直是上一次的
+                    // 陈旧值，所以「左划右滑动画一个样」。
+                    tap = false;
+                    direction = totalX < 0 ? DIR_LEFT : DIR_RIGHT;
+                } else {
+                    // 上下滑之类，不算翻页
+                    tap = false;
+                    return false;
                 }
-                break;
+                pending = true;
+                tapTime = System.currentTimeMillis();
+                return true;
             default:
                 break;
         }
@@ -83,6 +97,18 @@ final class SwipeTracker {
 
     int direction() {
         return direction;
+    }
+
+    /** 物理按键翻页用：直接指定方向。 */
+    void setDirection(int d) {
+        direction = d;
+    }
+
+    /** 物理按键翻页用：当作一次有效翻页手势，置 pending 并刷新计时。 */
+    void arm() {
+        pending = true;
+        tap = true;
+        tapTime = System.currentTimeMillis();
     }
 
     float downX() {

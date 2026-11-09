@@ -103,6 +103,17 @@
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
             </intent-filter>
         </receiver>
+
+        <!-- 本地调试：adb 广播直接改 Xposed 模块读的配置（见 DebugPrefsReceiver） -->
+        <receiver
+            android:name=".xposed.DebugPrefsReceiver"
+            android:exported="true" />
+
+        <!-- 点击方向 → system_server 的带外通道（只读 + 写入一次 int） -->
+        <provider
+            android:name=".xposed.TurnBus"
+            android:authorities="com.yota.launcher.turn"
+            android:exported="true" />
     </application>
 
 </manifest>
