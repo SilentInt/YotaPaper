@@ -194,7 +194,6 @@ class EInkLauncherView @JvmOverloads constructor(
      */
     private fun resetGrid() {
         val targetCount = poolSize.takeIf { it > 0 } ?: (columns * rows)
-
         if (holders.size != targetCount) {
             removeAllViews()
             holders.clear()
