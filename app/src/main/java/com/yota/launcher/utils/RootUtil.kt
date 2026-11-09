@@ -17,17 +17,24 @@ object RootUtil {
         )
     }
 
+    // 只缓存「有 Root」：拿不到时（用户尚未在 Magisk 允许）下次仍需重试
+    @Volatile
+    private var cachedRootAvailable: Boolean? = null
+
     /**
      * 检查当前是否具有 Root 权限（Shell 是否以 root 身份运行）
      */
     fun isRootAvailable(): Boolean {
-        return try {
+        cachedRootAvailable?.let { return it }
+        val available = try {
             val shell = Shell.getShell()
             shell.isRoot
         } catch (e: Exception) {
             Log.e("RootUtil", "isRootAvailable failed", e)
             false
         }
+        if (available) cachedRootAvailable = true
+        return available
     }
 
     fun forceStopPackage(packageName: String): Boolean {

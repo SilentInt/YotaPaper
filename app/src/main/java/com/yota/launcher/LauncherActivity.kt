@@ -12,7 +12,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.content.pm.ResolveInfo
 import android.database.ContentObserver
 import android.net.Uri
 import android.os.Build
@@ -32,6 +31,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import android.app.Activity
+import com.yota.launcher.data.AppEntry
 import com.yota.launcher.data.AppRepository
 import com.yota.launcher.epd.EpdManagerActivity
 import com.yota.launcher.epd.EpdParamsStore
@@ -43,7 +43,9 @@ import com.yota.launcher.ui.EInkLauncherView
 import com.yota.launcher.ui.IconLoader
 import com.yota.launcher.ui.SettingsController
 import com.yota.launcher.ui.StatusBarController
+import com.yota.launcher.utils.RootPermissionGranter
 import com.yota.launcher.utils.RootUtil
+import com.yota.launcher.utils.TaskScope
 import com.yota.launcher.yota.EInkSdk
 import com.yota.launcher.yota.YotaSdkAdapter
 import java.io.File
@@ -75,6 +77,17 @@ class LauncherActivity : Activity() {
     private lateinit var repository: AppRepository
     private lateinit var config: LauncherConfig
 
+    // Activity 作用域任务，[TaskScope.cancel] 后不再回调
+    private val tasks = TaskScope()
+
+    // 上一次渲染过的主页条目，切换回来时先顶上，避免等后台查询
+    private var lastHomeEntries: List<AppEntry> = emptyList()
+
+    // 异步结果可能乱序，用递增代号保证只有最后一次查询的结果能贴上去
+    private var homeRefreshToken = 0
+    private var appsRefreshToken = 0
+    private var recentRefreshToken = 0
+
     private lateinit var statusController: StatusBarController
     private lateinit var settingsController: SettingsController
 
@@ -88,11 +101,21 @@ class LauncherActivity : Activity() {
     private lateinit var textDate: TextView
     private lateinit var gridHome: EInkLauncherView
 
+    // 两套顶部布局（经典居中 / 左右分栏），同一份 page_home 里各一份，靠 GONE 切换
+    private lateinit var homeTopClassic: View
+    private lateinit var homeTopSplit: View
+    private lateinit var textTimeSplit: TextView
+    private lateinit var textDateSplit: TextView
+
+    // 状态栏与网格之间的横线。跟 showHomeDividers 一起开关，否则关掉网格分割线
+    // 这条还在，界面上会出现一条关不掉的线
+    private lateinit var homeTopDivider: View
+
     // Apps
     private lateinit var gridApps: EInkLauncherView
     private lateinit var textPage: TextView
     private lateinit var manageToggle: TextView
-    private var appsAll: List<ResolveInfo> = emptyList()
+    private var appsAll: List<AppEntry> = emptyList()
     private var appsPageIndex = 0
     private var appsPageCount = 0
     private var currentPage = -1
@@ -137,7 +160,7 @@ class LauncherActivity : Activity() {
     private lateinit var actionPin: TextView
     private lateinit var actionHide: TextView
     private lateinit var actionAppInfo: TextView
-    private var selectedApp: ResolveInfo? = null
+    private var selectedApp: AppEntry? = null
 
     // Recent tasks overlay
     private lateinit var recentOverlay: View
@@ -146,7 +169,14 @@ class LauncherActivity : Activity() {
     private lateinit var recentGrid: EInkLauncherView
     private lateinit var recentCancel: TextView
     private lateinit var recentClear: TextView
-    private var previousApp: ResolveInfo? = null
+    private var previousApp: AppEntry? = null
+    // 最近一次查到的最近任务；面板一律用内存里的这份渲染，查询全走后台
+    private var recentApps: List<AppEntry> = emptyList()
+    // 上一应用：取全量结果里的第一个，不受「只显示最近 N 分钟」限制。
+    // 取消时要回退到它，即使它因为时间窗没有出现在面板列表里。
+    private var recentPrevious: AppEntry? = null
+    // 是否已经查到过一次：没查过时不渲染，免得异步期间误报「暂无最近任务」
+    private var recentLoaded = false
     private var lastHomeIntentTime = 0L
     private var lastHomeClickTime = 0L
 
@@ -168,6 +198,8 @@ class LauncherActivity : Activity() {
     private lateinit var wifiUrlText: TextView
     private lateinit var wifiHintText: TextView
     private var wifiServer: WifiTransferServer? = null
+    // 二维码改后台生成后可能乱序，关掉面板时递增作废在途结果
+    private var wifiQrToken = 0
 
     // First-use guide overlay
     private lateinit var guideOverlay: View
@@ -327,13 +359,20 @@ class LauncherActivity : Activity() {
         StartupTracer.stage("guide")
 
         // ================= 预热 Root Shell =================
-        // 重启后第一次进桌面就 fork su、建立 libsu 全局 shell，
-        // 这样后续在第三方控制中心里点击飞行模式时，Shell.getShell() 直接走缓存，
-        // 不会在主线程阻塞、不会触发 ANR。
-        Thread {
-            runCatching { RootUtil.isRootAvailable() }
-        }.start()
+        // 用到 Root 的功能（彻底清理后台 / 控制中心）没开时不预热：
+        // Shell.getShell() 会唤起 Magisk 授权弹窗，每次冷启动都跑一遍属于打扰
+        if (config.rootClear || config.controlCenterEnabled) {
+            tasks.io {
+                RootUtil.isRootAvailable()
+                RootPermissionGranter.ensureGranted(applicationContext)
+            }
+        }
         // ==================================================
+
+        // 预热最近任务列表：面板打开时先用这份缓存渲染，不必等 usage 查询，
+        // 也避免首帧先闪一下「暂无最近任务」再重画（墨水屏上这个闪很明显）。
+        // 延后到冷启动批次之后，不跟主页/应用列表的查询抢 usage 服务。
+        epdObserverHandler.postDelayed({ refreshRecentApps() }, 1200)
 
         // ================= 控制中心服务启动（根据配置） =================
         if (config.controlCenterEnabled) {
@@ -354,6 +393,9 @@ class LauncherActivity : Activity() {
     // ============ 控制中心浮层装配 ============
 
     private fun setupControlPanel() {
+        // 必须在 onCreate 里同步建好：浮层的视图树要和桌面首帧一起完成布局，
+        // 否则下拉那一刻才 addView，窗口首次布局会和 EPD 动画挤在同一帧，
+        // 动画被武装在还没 layout 的树上，表现为第一次下拉看不到面板
         controlPanel = ControlCenterPanel(this)
         controlPanel?.attach()
         val filter = IntentFilter().apply {
@@ -379,6 +421,8 @@ class LauncherActivity : Activity() {
     }
 
     override fun onDestroy() {
+        // 销毁后不再接受后台回调
+        tasks.cancel()
         if (yotaDevice) {
             contentResolver.unregisterContentObserver(epdProviderObserver)
             epdObserverHandler.removeCallbacks(epdObserverRunnable)
@@ -395,21 +439,20 @@ class LauncherActivity : Activity() {
         wifiServer = null
     }
 
+    // 传 applicationContext 而非 Activity，避免后台任务持有 Activity 引用
     private fun syncEpdParamsFromProvider() {
         if (!yotaDevice || !store.autoApplyEpdParamsEnabled()) return
-        val launcherComponent = ComponentName(this, LauncherActivity::class.java).toString()
-        Thread {
-            EpdParamsStore.mergeFromProvider(this, launcherComponent)
-        }.start()
+        val appContext = applicationContext
+        val launcherComponent = ComponentName(appContext, LauncherActivity::class.java).toString()
+        tasks.io { EpdParamsStore.mergeFromProvider(appContext, launcherComponent) }
     }
 
     private fun startupSyncEpdParams() {
         if (!yotaDevice || !store.autoApplyEpdParamsEnabled()) return
-        val launcherComponent = ComponentName(this, LauncherActivity::class.java).toString()
+        val appContext = applicationContext
+        val launcherComponent = ComponentName(appContext, LauncherActivity::class.java).toString()
         epdObserverHandler.postDelayed({
-            Thread {
-                EpdParamsStore.syncAndApply(this, launcherComponent)
-            }.start()
+            tasks.io { EpdParamsStore.syncAndApply(appContext, launcherComponent) }
         }, 300)
     }
 
@@ -484,6 +527,9 @@ class LauncherActivity : Activity() {
             applyRefreshMode(config)
             if (!coldStartResume) refreshHome()
         }
+        // 回到桌面这一刻正是「上一个应用」的判定时刻：顺手刷一次最近任务缓存，
+        // 面板打开时用它填 previousApp 才是对的（冷启动交给 onCreate 的预热）
+        if (!coldStartResume) refreshRecentApps()
         updateClock()
         statusController.update()
         coldStartResume = false
@@ -543,6 +589,11 @@ class LauncherActivity : Activity() {
         textTime = findViewById(R.id.textTime)
         textDate = findViewById(R.id.textDate)
         gridHome = findViewById(R.id.gridHome)
+        homeTopDivider = findViewById(R.id.homeTopDivider)
+        homeTopClassic = findViewById(R.id.homeTopClassic)
+        homeTopSplit = findViewById(R.id.homeTopSplit)
+        textTimeSplit = findViewById(R.id.textTimeSplit)
+        textDateSplit = findViewById(R.id.textDateSplit)
 
         bottomBar = findViewById(R.id.bottomBar)
         infoTime = findViewById(R.id.infoTime)
@@ -603,22 +654,23 @@ class LauncherActivity : Activity() {
 
     private fun ensureDonationQr() {
         if (donationQrReady) return
-        Thread {
-            val qr = QrCodes.generate(DONATION_WECHAT_URI, dp(240))
-            runOnUiThread {
-                if (isFinishing) return@runOnUiThread
+        val size = dp(240)
+        tasks.worker(
+            work = { QrCodes.generate(DONATION_WECHAT_URI, size) },
+            after = { qr ->
                 donationQr.setImageBitmap(qr)
                 guideDonationQr.setImageBitmap(qr)
                 donationPromptQr.setImageBitmap(qr)
                 donationQrReady = true
             }
-        }.start()
+        )
     }
 
     private fun setupControllers() {
         statusController = StatusBarController(this).also {
             it.bind()
             it.setup()
+            it.setIconStyle(config.homeTopIconStyle)
         }
     }
 
@@ -635,12 +687,12 @@ class LauncherActivity : Activity() {
             if (manageMode) exitManageMode() else enterManageMode()
         }
         gridApps.setOnItemInteractionListener(object : EInkLauncherView.OnItemInteractionListener {
-            override fun onItemClick(info: ResolveInfo) {
-                if (manageMode) toggleManageSelect(info) else launchApp(info)
+            override fun onItemClick(entry: AppEntry) {
+                if (manageMode) toggleManageSelect(entry) else launchApp(entry)
             }
 
-            override fun onItemLongClick(info: ResolveInfo) {
-                if (!manageMode) showActionSheet(info)
+            override fun onItemLongClick(entry: AppEntry) {
+                if (!manageMode) showActionSheet(entry)
             }
         })
 
@@ -759,8 +811,8 @@ class LauncherActivity : Activity() {
 
     private fun setupGrids() {
         gridHome.setOnItemInteractionListener(object : EInkLauncherView.OnItemInteractionListener {
-            override fun onItemClick(info: ResolveInfo) = launchApp(info)
-            override fun onItemLongClick(info: ResolveInfo) = showActionSheet(info)
+            override fun onItemClick(entry: AppEntry) = launchApp(entry)
+            override fun onItemLongClick(entry: AppEntry) = showActionSheet(entry)
         })
         gridHome.setOnPageChangeListener(object : EInkLauncherView.OnPageChangeListener {
             override fun onNextPage() = selectPage(PAGE_APPS, animate = true)
@@ -881,37 +933,107 @@ class LauncherActivity : Activity() {
     private fun pxToDp(px: Int): Float = px / resources.displayMetrics.density
 
     private fun refreshHome() {
-        val apps = repository.loadApps()
-        StartupTracer.stage("refreshHome-loadApps")
         val (columns, rows) = resolvedHomeGrid()
         currentHomeGrid = columns to rows
         gridHome.configure(columns, rows)
+        // 横线跟着主页分割线开关走。用 INVISIBLE 而不是 GONE：GONE 的子 View 在
+        // LinearLayout 里会被跳过 measure/layout，32dp 边距跟着失效，网格会整体上移
+        homeTopDivider.visibility =
+            if (config.showHomeDividers) View.VISIBLE else View.INVISIBLE
+        applyHomeTopStyle()
+        // 图标风格不算「版式」，但同在顶部这一块，跟着一起刷最省事；
+        // setIconStyle 内部有等值早退，没改风格时什么都不会发生
+        if (::statusController.isInitialized) statusController.setIconStyle(config.homeTopIconStyle)
+        StartupTracer.stage("refreshHome-config")
+
         val limit = columns * rows
-        val sorted = repository.sortHomeApps(apps, limit)
-        StartupTracer.stage("refreshHome-sort")
-        gridHome.setApps(
-            pageApps = sorted,
-            selection = emptySet(),
-            manageMode = false,
-            showDividers = config.showHomeDividers,
-            hidden = emptySet()
+        val token = ++homeRefreshToken
+
+        // 先把上一次的结果顶上：后台查询要几十~几百毫秒，
+        // 不先画的话切换页面时格子会先空着、或留着上一个应用的图标
+        if (lastHomeEntries.isNotEmpty()) {
+            gridHome.setApps(
+                pageApps = lastHomeEntries,
+                selection = emptySet(),
+                manageMode = false,
+                showDividers = config.showHomeDividers,
+                hidden = emptySet()
+            )
+        }
+
+        // loadApps 要全量 queryIntentActivities，冷启动最重的一步：放到后台，
+        // 网格先摆好布局，数据回来再回填，避免首帧被查询阻塞
+        tasks.worker(
+            work = { repository.sortHomeApps(repository.loadApps(), limit) },
+            after = { entries ->
+                // 已有更新的刷新在跑，本次结果作废
+                if (token == homeRefreshToken) {
+                    lastHomeEntries = entries
+                    gridHome.setApps(
+                        pageApps = entries,
+                        selection = emptySet(),
+                        manageMode = false,
+                        showDividers = config.showHomeDividers,
+                        hidden = emptySet()
+                    )
+                    StartupTracer.stage("refreshHome-setApps")
+                }
+            }
         )
-        StartupTracer.stage("refreshHome-setApps")
     }
 
+    // 切换顶部风格：GONE 的那一套不参与 measure/layout，剩下的那套自然顶到顶部
+    private fun applyHomeTopStyle() {
+        if (!::homeTopSplit.isInitialized) return
+        val split = config.homeTopStyle == 1
+        homeTopClassic.visibility = if (split) View.GONE else View.VISIBLE
+        homeTopSplit.visibility = if (split) View.VISIBLE else View.GONE
+
+        // 分割线上方留白 = 顶部块上方留白，顶部块就在「屏幕顶 → 分割线」之间居中，
+        // 与块高无关，所以时间字号改了也不用重算
+        val lp = homeTopDivider.layoutParams as? LinearLayout.LayoutParams ?: return
+        val gap = resources.getDimensionPixelSize(
+            if (split) R.dimen.home_top_gap_split else R.dimen.home_top_gap_classic
+        )
+        if (lp.topMargin != gap) {
+            lp.topMargin = gap
+            homeTopDivider.layoutParams = lp
+        }
+    }
+
+    // 同 refreshHome，查询走后台
     private fun refreshApps() {
         ensureAppsPage()
         appsLoaded = true
-        appsAll = if (manageMode) repository.loadAllApps() else repository.loadApps()
-        StartupTracer.stage("refreshApps-load")
+
+        val includeHidden = manageMode
         val (columns, rows) = resolvedAppGrid()
         currentAppGrid = columns to rows
         gridApps.configure(columns, rows)
-        appsPageCount =
-            if (appsAll.isEmpty()) 0
-            else ceil(appsAll.size.toDouble() / (columns * rows)).toInt()
-        showAppsPage(0)
-        StartupTracer.stage("refreshApps-showPage")
+        StartupTracer.stage("refreshApps-load")
+
+        // 手上已有列表就先按它画一次，抽屉不会在异步查询期间空白。
+        // 页码跟异步完成后的 showAppsPage(0) 保持一致，避免中间多跳一次
+        val pageSize = columns * rows
+        if (appsAll.isNotEmpty()) {
+            appsPageCount = ceil(appsAll.size.toDouble() / pageSize).toInt()
+            showAppsPage(0)
+        }
+
+        val token = ++appsRefreshToken
+        tasks.worker(
+            work = { if (includeHidden) repository.loadAllApps() else repository.loadApps() },
+            after = { list ->
+                if (token == appsRefreshToken) {
+                    appsAll = list
+                    appsPageCount =
+                        if (list.isEmpty()) 0
+                        else ceil(list.size.toDouble() / pageSize).toInt()
+                    showAppsPage(0)
+                    StartupTracer.stage("refreshApps-showPage")
+                }
+            }
+        )
     }
 
     private fun showAppsPage(index: Int) {
@@ -922,7 +1044,8 @@ class LauncherActivity : Activity() {
         appsPageIndex = clamped
         val start = clamped * pageSize
         val end = minOf(start + pageSize, appsAll.size)
-        val page: MutableList<ResolveInfo?> = appsAll.subList(start, end).toMutableList()
+        val page = ArrayList<AppEntry?>(pageSize)
+        if (start < end) page.addAll(appsAll.subList(start, end))
         while (page.size < pageSize) page.add(null)
 
         gridApps.setApps(
@@ -1087,8 +1210,8 @@ class LauncherActivity : Activity() {
         refreshApps()
     }
 
-    private fun toggleManageSelect(info: ResolveInfo) {
-        val pkg = info.activityInfo.packageName
+    private fun toggleManageSelect(entry: AppEntry) {
+        val pkg = entry.packageName
         if (manageSelected.contains(pkg)) manageSelected.remove(pkg) else manageSelected.add(pkg)
         gridApps.updateSelection(manageSelected)
     }
@@ -1132,11 +1255,11 @@ class LauncherActivity : Activity() {
         }
     }
 
-    private fun showActionSheet(info: ResolveInfo) {
-        selectedApp = info
-        actionTitle.text = info.loadLabel(packageManager)
+    private fun showActionSheet(entry: AppEntry) {
+        selectedApp = entry
+        actionTitle.text = entry.label
         actionPin.text = getString(
-            if (repository.isPinned(info.activityInfo.packageName)) R.string.action_unpin
+            if (repository.isPinned(entry.packageName)) R.string.action_unpin
             else R.string.action_pin
         )
         actionHide.text = getString(R.string.action_hide)
@@ -1191,9 +1314,14 @@ class LauncherActivity : Activity() {
     private fun setupRecentOverlay() {
         findViewById<View>(R.id.recentDim).setOnClickListener { hideRecentTasks() }
         recentClear.setOnClickListener {
-            val appsToKill = currentRecentApps()
+            // 面板上显示的就是 recentApps，直接拿它去清理，不再重查一遍
+            val appsToKill = recentApps
             store.markRecentCleared()
             previousApp = null
+            recentPrevious = null
+            // 必须同步清空内存列表：populateRecentGrid 现在只读 recentApps，
+            // 不清的话网格会继续显示旧内容
+            recentApps = emptyList()
             populateRecentGrid()
             killBackgroundApps(appsToKill)
         }
@@ -1205,32 +1333,32 @@ class LauncherActivity : Activity() {
         }
 
         recentGrid.setOnItemInteractionListener(object : EInkLauncherView.OnItemInteractionListener {
-            override fun onItemClick(info: ResolveInfo) {
+            override fun onItemClick(entry: AppEntry) {
                 hideRecentTasks()
-                launchApp(info)
+                launchApp(entry)
             }
 
             @SuppressLint("SetTextI18n")
-            override fun onItemLongClick(info: ResolveInfo) {
-                val pkg = info.activityInfo.packageName
+            override fun onItemLongClick(entry: AppEntry) {
+                val pkg = entry.packageName
                 if (pkg == packageName) return
-                val label = info.loadLabel(packageManager).toString()
+                val label = entry.label
 
                 if (config.rootClear) {
-                    Thread {
-                        val success = RootUtil.forceStopPackage(pkg)
-                        runOnUiThread {
+                    tasks.worker(
+                        work = { RootUtil.forceStopPackage(pkg) },
+                        after = { success ->
                             // 【修复 2】检查面板是否已关闭或 Activity 是否销毁
-                            if (isFinishing || recentOverlay.visibility != View.VISIBLE) return@runOnUiThread
-
-                            if (success) {
-                                toast("已停止: $label")
-                                removeAppFromRecentUI(pkg)
-                            } else {
-                                toast("停止 $label 失败，请检查 Root 权限")
+                            if (!isFinishing && recentOverlay.visibility == View.VISIBLE) {
+                                if (success) {
+                                    toast("已停止: $label")
+                                    removeAppFromRecentUI(pkg)
+                                } else {
+                                    toast("停止 $label 失败，请检查 Root 权限")
+                                }
                             }
                         }
-                    }.start()
+                    )
                 } else {
                     val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
                     runCatching {
@@ -1246,13 +1374,18 @@ class LauncherActivity : Activity() {
 
     private fun removeAppFromRecentUI(pkg: String) {
         // 【修复 1】如果被杀掉的应用刚好是“上一应用”，立刻置空，防止取消时诈尸
-        if (previousApp?.activityInfo?.packageName == pkg) {
+        if (previousApp?.packageName == pkg) {
             previousApp = null
+        }
+        // 缓存里那份也要清，否则下次打开面板又会从缓存把它填回 previousApp
+        if (recentPrevious?.packageName == pkg) {
+            recentPrevious = null
         }
 
         store.markAppCleared(pkg)
-        val remaining = currentRecentApps()
-        if (remaining.isEmpty()) {
+        // 直接从内存列表里摘掉：原来这里会重跑一遍 usage 查询，纯属浪费
+        recentApps = recentApps.filterNot { it.packageName == pkg }
+        if (recentApps.isEmpty()) {
             hideRecentTasks()
         } else {
             populateRecentGrid()
@@ -1317,6 +1450,7 @@ class LauncherActivity : Activity() {
 
     private fun setupWifiTransfer() {
         textTime.setOnClickListener { startWifiTransfer() }
+        textTimeSplit.setOnClickListener { startWifiTransfer() }
         findViewById<View>(R.id.wifiClose).setOnClickListener { closeWifiTransfer() }
     }
 
@@ -1375,14 +1509,24 @@ class LauncherActivity : Activity() {
         wifiUrlText.text = url
         wifiHintText.text = getString(R.string.wifi_transfer_url_hint, url) + "\n" +
                 getString(R.string.wifi_transfer_folder_hint)
-        wifiQr.setImageBitmap(QrCodes.generate(url, dp(300)))
+        // 面板先亮，二维码丢后台画：600px 的码要填 36 万像素，主线程会顿一下
         wifiOverlay.visibility = View.VISIBLE
+        val token = ++wifiQrToken
+        val sizePx = dp(300)
+        tasks.worker(
+            work = { QrCodes.generate(url, sizePx) },
+            after = { bitmap ->
+                if (token == wifiQrToken) wifiQr.setImageBitmap(bitmap)
+            }
+        )
     }
 
     private fun closeWifiTransfer() {
         wifiServer?.stop()
         wifiServer = null
         wifiOverlay.visibility = View.GONE
+        // 作废在途的二维码，免得关掉面板后又被回填
+        wifiQrToken++
     }
 
     private fun getWifiIpAddress(): String? {
@@ -1426,8 +1570,40 @@ class LauncherActivity : Activity() {
         if (actionOverlay.visibility == View.VISIBLE) hideActionSheet()
         if (manageMode) exitManageMode()
         recentOverlay.visibility = View.VISIBLE
-        previousApp = loadRecentApps().firstOrNull()
-        populateRecentGrid()
+        // 先用缓存顶上（onResume 回到桌面时已刷过一轮），再后台重查校准
+        previousApp = recentPrevious
+        // 还没查到过就先不渲染，否则会闪一屏「暂无最近任务」再重画
+        if (recentLoaded) populateRecentGrid()
+        refreshRecentApps()
+    }
+
+    /**
+     * 后台重查最近任务。一次 queryUsageStats 同时拿到两个视图：面板要显示的列表
+     * （按时间窗过滤）和「上一应用」（全量第一个，不受时间窗限制）。
+     *
+     * 原来这两样在 UI 线程上各查一遍，打开面板必然卡一下；现在面板先用缓存立即
+     * 渲染，结果回来再覆盖。
+     */
+    private fun refreshRecentApps() {
+        if (Build.VERSION.SDK_INT < 21) return
+        val token = ++recentRefreshToken
+        val windowMs = config.recentWindowMs
+        tasks.worker(
+            work = { queryRecentApps(windowMs) },
+            after = { r ->
+                // 已有更新的查询在跑，本次结果作废
+                if (token == recentRefreshToken) {
+                    recentLoaded = true
+                    recentPrevious = r.previous
+                    recentApps = r.visible
+                    // 必须用最新结果覆盖，不能只在 null 时才填：
+                    // 打开面板时先填的是缓存里的旧值，只补空会让上一次的
+                    //「上一应用」一直错下去，取消时跳到错误的 App
+                    previousApp = r.previous
+                    if (recentOverlay.visibility == View.VISIBLE) populateRecentGrid()
+                }
+            }
+        )
     }
 
     @SuppressLint("SetTextI18n")
@@ -1450,7 +1626,7 @@ class LauncherActivity : Activity() {
             return
         }
 
-        val apps = currentRecentApps()
+        val apps = recentApps
 
         if (apps.isEmpty()) {
             recentMessage.text =
@@ -1475,6 +1651,10 @@ class LauncherActivity : Activity() {
         var rows = (apps.size + columns - 1) / columns
         rows = rows.coerceIn(1, GridSizing.recentRowCap(displayHeightDp() * 0.4f))
         recentGrid.configure(columns, rows)
+        // 行数随数量浮动，若让池子跟着 rows 走，每次刷新跨过列数的倍数都会整池
+        // removeAllViews + 重新 inflate。按上限（queryRecentApps 最多 12 个）固定，
+        // 多出的槽位在 rebind 里走 GONE
+        recentGrid.reservePool(RECENT_MAX_ITEMS)
 
         val rowHeight = GridSizing.rowHeightDp(iconPx, density)
         recentGrid.layoutParams = recentGrid.layoutParams.apply {
@@ -1490,48 +1670,46 @@ class LauncherActivity : Activity() {
         )
     }
 
-    private fun currentRecentApps(): List<ResolveInfo> {
-        val windowMs = config.recentWindowMs
-        return if (windowMs > 0L) {
-            loadRecentApps(System.currentTimeMillis() - windowMs)
-        } else {
-            loadRecentApps()
-        }
-    }
-
     @SuppressLint("SetTextI18n")
-    private fun killBackgroundApps(apps: List<ResolveInfo>) {
+    private fun killBackgroundApps(apps: List<AppEntry>) {
         if (apps.isEmpty()) return
 
+        // 先取出 selfPkg，避免后台 lambda 捕获 Activity
+        val selfPkg = packageName
+
         if (config.rootClear) {
-            Thread {
-                val pkgs = apps.map { it.activityInfo.packageName }.filter { it != packageName }
-                if (pkgs.isNotEmpty()) {
-                    // D 方案：只对“仍有进程存活”的应用下 root force-stop（root 枚举，
-                    // 见 RootUtil.runningProcessPackages；不能用 getRunningAppProcesses，
-                    // API21+ 对三方应用只返回自身进程）。空闲项没有进程可杀，跳过即可。
-                    val running = RootUtil.runningProcessPackages(pkgs)
-                    val idle = pkgs.filter { it !in running }
+            tasks.worker(
+                work = {
+                    val pkgs = apps.map { it.packageName }.filter { it != selfPkg }
+                    if (pkgs.isEmpty()) {
+                        ToastResult(emptyList(), emptyList(), true)
+                    } else {
+                        // D 方案：只对“仍有进程存活”的应用下 root force-stop（root 枚举，
+                        // 见 RootUtil.runningProcessPackages；不能用 getRunningAppProcesses，
+                        // API21+ 对三方应用只返回自身进程）。空闲项没有进程可杀，跳过即可。
+                        val running = RootUtil.runningProcessPackages(pkgs)
+                        val idle = pkgs.filter { it !in running }
 
-                    // B 方案：libsu 单壳是串行的，运行中的包改用独立 su 进程并发强停
-                    val success = if (running.isNotEmpty()) {
-                        RootUtil.forceStopPackagesParallel(running)
-                    } else true
-
-                    runOnUiThread {
-                        if (success) {
-                            val msg = when {
-                                running.isEmpty() -> "已清理 ${idle.size} 个后台任务"
-                                idle.isEmpty() -> "已彻底清理 ${running.size} 个应用"
-                                else -> "已清理 ${running.size} 个运行中应用、${idle.size} 个空闲任务"
-                            }
-                            toast(msg)
-                        } else {
-                            toast("清理完成，或未授予 Root 权限")
+                        // B 方案：libsu 单壳是串行的，运行中的包改用独立 su 进程并发强停
+                        val success = if (running.isNotEmpty()) {
+                            RootUtil.forceStopPackagesParallel(running)
+                        } else true
+                        ToastResult(running, idle, success)
+                    }
+                },
+                after = { r ->
+                    if (r.success) {
+                        val msg = when {
+                            r.running.isEmpty() -> "已清理 ${r.idle.size} 个后台任务"
+                            r.idle.isEmpty() -> "已彻底清理 ${r.running.size} 个应用"
+                            else -> "已清理 ${r.running.size} 个运行中应用、${r.idle.size} 个空闲任务"
                         }
+                        toast(msg)
+                    } else {
+                        toast("清理完成，或未授予 Root 权限")
                     }
                 }
-            }.start()
+            )
         } else {
             if (Build.VERSION.SDK_INT >= 23 &&
                 checkSelfPermission(Manifest.permission.KILL_BACKGROUND_PROCESSES) !=
@@ -1543,9 +1721,9 @@ class LauncherActivity : Activity() {
             }
             val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
             var killed = 0
-            for (info in apps) {
-                val pkg = info.activityInfo.packageName
-                if (pkg == packageName) continue
+            for (entry in apps) {
+                val pkg = entry.packageName
+                if (pkg == selfPkg) continue
                 runCatching {
                     am.killBackgroundProcesses(pkg)
                     killed++
@@ -1560,9 +1738,23 @@ class LauncherActivity : Activity() {
         }
     }
 
+    /** 后台清理结果，带回主线程拼 toast */
+    private class ToastResult(
+        val running: List<String>,
+        val idle: List<String>,
+        val success: Boolean
+    )
+
+    /**
+     * 最近任务查询结果。一次 queryUsageStats 同时给出两个视图：
+     * - [previous]：上一应用，不受「只显示最近 N 分钟」限制，取消时回退用；
+     * - [visible]：面板要显示的列表，按时间窗过滤。
+     */
+    private class RecentQueryResult(val previous: AppEntry?, val visible: List<AppEntry>)
+
     @SuppressLint("NewApi")
-    private fun loadRecentApps(since: Long = 0L): List<ResolveInfo> {
-        if (Build.VERSION.SDK_INT < 21) return emptyList()
+    private fun queryRecentApps(windowMs: Long): RecentQueryResult {
+        if (Build.VERSION.SDK_INT < 21) return RecentQueryResult(null, emptyList())
         val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val now = System.currentTimeMillis()
         val begin = now - 7L * 24 * 60 * 60 * 1000
@@ -1570,15 +1762,20 @@ class LauncherActivity : Activity() {
             usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, begin, now)
         }.getOrDefault(emptyList())
 
-        val apps = ArrayList<ResolveInfo>()
+        // picked 是「不带时间窗」的全量结果，[first] = 上一应用。
+        // 时间窗只用来决定面板显示什么，不影响取消时回退到哪个 App。
+        val picked = ArrayList<Pair<AppEntry, Long>>()
         val clearedAt = store.recentClearedAt()
+        val seen = HashSet<String>()
         for (stat in stats.sortedByDescending { it.lastTimeUsed }) {
             if (stat.lastTimeUsed <= 0) continue
             if (stat.lastTimeUsed <= clearedAt) continue
-            if (since > 0L && stat.lastTimeUsed < since) continue
 
             val pkg = stat.packageName
             if (pkg == packageName) continue
+            // INTERVAL_BEST 下同一个包会返回多条分桶记录，先去重再查：
+            // 否则会对同一个包反复 getLaunchIntentForPackage / resolveActivity
+            if (!seen.add(pkg)) continue
 
             // 核心修复：根据独立的单个 App 时间戳过滤历史记录
             if (stat.lastTimeUsed <= store.appClearedAt(pkg)) continue
@@ -1586,11 +1783,20 @@ class LauncherActivity : Activity() {
             val launchIntent = packageManager.getLaunchIntentForPackage(pkg) ?: continue
             val info = runCatching { packageManager.resolveActivity(launchIntent, 0) }.getOrNull()
                 ?: continue
-            if (apps.any { it.activityInfo.packageName == pkg }) continue
-            apps.add(info)
-            if (apps.size >= 12) break
+            // 复用 AppRepository 的 label 缓存
+            picked.add(repository.entryFor(info) to stat.lastTimeUsed)
+            if (picked.size >= RECENT_MAX_ITEMS) break
         }
-        return apps
+
+        // 列表已按 lastTimeUsed 降序，窗口内的一定排在最前面，
+        // 所以「先截 12 再过滤」与「先过滤再截 12」结果一致
+        val visible = if (windowMs > 0L) {
+            val since = now - windowMs
+            picked.filter { it.second >= since }.map { it.first }
+        } else {
+            picked.map { it.first }
+        }
+        return RecentQueryResult(picked.firstOrNull()?.first, visible)
     }
 
     @SuppressLint("NewApi")
@@ -1616,26 +1822,26 @@ class LauncherActivity : Activity() {
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
-    private fun togglePin(info: ResolveInfo) {
-        val pkg = info.activityInfo.packageName
+    private fun togglePin(entry: AppEntry) {
+        val pkg = entry.packageName
         val pinned = repository.isPinned(pkg)
         repository.setPinned(pkg, !pinned)
         toast(if (!pinned) "已固定到主页" else "已取消固定")
         refreshHome()
     }
 
-    private fun hideApp(info: ResolveInfo) {
-        repository.setHidden(info.activityInfo.packageName, true)
+    private fun hideApp(entry: AppEntry) {
+        repository.setHidden(entry.packageName, true)
         toast("已隐藏")
         refreshHome()
         refreshApps()
     }
 
-    private fun showAppInfo(info: ResolveInfo) {
+    private fun showAppInfo(entry: AppEntry) {
         runCatching {
             startActivity(
                 Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                    data = Uri.parse("package:${info.activityInfo.packageName}")
+                    data = Uri.parse("package:${entry.packageName}")
                 }
             )
         }
@@ -1643,9 +1849,9 @@ class LauncherActivity : Activity() {
 
     // ------------------------------------------------------------------ Common
 
-    private fun launchApp(info: ResolveInfo) {
-        repository.recordUsage(info.activityInfo.packageName)
-        repository.launch(info)
+    private fun launchApp(entry: AppEntry) {
+        repository.recordUsage(entry.packageName)
+        repository.launch(entry)
     }
 
     private fun registerTimeReceiver() {
@@ -1680,6 +1886,8 @@ class LauncherActivity : Activity() {
         val date = SimpleDateFormat("MM月dd日 · E", Locale.CHINA).format(now)
         textTime.text = time
         textDate.text = date
+        textTimeSplit.text = time
+        textDateSplit.text = date
         infoTime.text = time
     }
 
@@ -1720,5 +1928,9 @@ class LauncherActivity : Activity() {
             "wxp://f2f0KzDXCZc0SriqXOoY8fWKxxyFbxz9xhImNUL1VgMLLaQ"
         private const val REQ_WRITE_STORAGE = 7
         private const val REQ_UNINSTALL = 8
+
+        // 最近任务最多显示多少个。既是 queryRecentApps 的截断上限，也是 recentGrid
+        // 预留 holder 池的容量依据，两个数必须一致，所以放一起
+        private const val RECENT_MAX_ITEMS = 12
     }
 }

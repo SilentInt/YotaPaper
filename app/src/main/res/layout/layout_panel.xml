@@ -58,39 +58,13 @@
                 android:textSize="12sp"
                 android:visibility="gone" />
 
-            <!-- 纯 XML 拼接的黑白点阵电池图标 -->
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-                <!-- 电池外框 -->
-                <FrameLayout
-                    android:layout_width="22dp"
-                    android:layout_height="12dp"
-                    android:background="#000000"
-                    android:padding="1.5dp">
-                    <!-- 内部电量轨道 -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:background="#FFFFFF"
-                        android:orientation="horizontal"
-                        android:weightSum="100">
-                        <View
-                            android:id="@+id/view_battery_fill"
-                            android:layout_width="0dp"
-                            android:layout_height="match_parent"
-                            android:layout_weight="85"
-                            android:background="#000000" />
-                    </LinearLayout>
-                </FrameLayout>
-                <!-- 电池正极触头 -->
-                <View
-                    android:layout_width="2dp"
-                    android:layout_height="4dp"
-                    android:background="#000000" />
-            </LinearLayout>
+            <!-- 电池图标：EinkWallpaper 竖屏时钟同款（圆角描边外框 + 圆角正极凸点 +
+                 四格分段电量），几何在 com.yota.launcher.ui.BatteryIconView 里，
+                 24dp x 12dp 是 52:26 的原设计比例 -->
+            <com.yota.launcher.ui.BatteryIconView
+                android:id="@+id/view_battery_icon"
+                android:layout_width="24dp"
+                android:layout_height="12dp" />
 
             <!-- 电量百分比 -->
             <TextView
@@ -103,6 +77,34 @@
                 android:textStyle="bold"
                 tools:text="85%" />
         </LinearLayout>
+
+        <!-- 新增：电源图标 (在背屏单开左侧) -->
+        <ImageView
+            android:id="@+id/btn_power_top"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_alignBottom="@id/tv_date"
+            android:layout_toStartOf="@id/btn_epd_only"
+            android:layout_marginEnd="20dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:contentDescription="电源"
+            android:focusable="true"
+            android:src="@drawable/ic_power" />
+
+        <!-- 新增：背屏单开图标 (在飞行模式左侧) -->
+        <ImageView
+            android:id="@+id/btn_epd_only"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_alignBottom="@id/tv_date"
+            android:layout_toStartOf="@id/btn_airplane_mode"
+            android:layout_marginEnd="20dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:contentDescription="背屏单开"
+            android:focusable="true"
+            android:src="@drawable/ic_epd_only_off" />
 
         <!-- 飞行模式图标：默认显示关闭状态(白底黑框) -->
         <ImageView
@@ -223,6 +225,34 @@
                 android:textColor="#FFFFFF"
                 android:textSize="11sp"
                 tools:text="微信读书" />
+            <!-- 首次切动画未生效时：临时顶替 App 名徽标，显示提示 + 立即重启 -->
+            <LinearLayout
+                android:id="@+id/hint_epd_2"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:visibility="gone">
+                <TextView
+                    android:id="@+id/tv_epd_2_msg"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="首次切换需重启"
+                    android:textColor="#8A8A8A"
+                    android:textSize="11sp" />
+                <TextView
+                    android:id="@+id/btn_epd_restart_app"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bg_btn_clear"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="2dp"
+                    android:text="立即重启"
+                    android:textColor="#000000"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- 模式切换 -->
@@ -239,35 +269,44 @@
         </LinearLayout>
 
 
-        <!-- 动画模式提示与重启按钮 -->
+        <!-- 动画波形选择：已选动画即出现（未生效时配合上面的重启提示，
+             生效后可直接即时切换）。去掉标题、紧贴模式行，减小卡片高度。 -->
         <LinearLayout
-            android:id="@+id/hint_epd_2"
+            android:id="@+id/epd_wave_container"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:layout_marginTop="8dp"
+            android:orientation="vertical"
+            android:layout_marginTop="0dp"
             android:visibility="gone">
-            <TextView
-                android:id="@+id/tv_epd_2_msg"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="动画模式需重启应用生效"
-                android:textColor="#8A8A8A"
-                android:textSize="11sp" />
 
-            <TextView
-                android:id="@+id/btn_epd_restart_app"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:background="@drawable/bg_btn_clear"
-                android:paddingHorizontal="10dp"
-                android:paddingVertical="2dp"
-                android:text="立即重启"
-                android:textColor="#000000"
-                android:textSize="11sp"
-                android:textStyle="bold" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="36dp"
+                android:orientation="horizontal"
+                android:background="@drawable/bg_btn_off">
+
+                <TextView
+                    android:id="@+id/btn_epd_wave_hi"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="平滑翻页"
+                    android:textColor="#000000"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/btn_epd_wave_full"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="黑闪翻页"
+                    android:textColor="#000000"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- 具体参数 -->

@@ -18,6 +18,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -30,6 +31,7 @@ import com.yota.launcher.LauncherActivity
 import com.yota.launcher.R
 import com.yota.launcher.data.LauncherConfigStore
 import java.util.Locale
+import com.yota.launcher.utils.LauncherExecutors
 
 /**
  * 集成在 Launcher 内的系统刷新参数管理器。
@@ -66,6 +68,10 @@ class EpdManagerActivity : Activity() {
     private val requestExport = 101
     private val requestImport = 102
 
+    // onCreate 已经加载过一次，首次 onResume 不必重复；导入返回时 onActivityResult 自己会刷
+    private var firstResume = true
+    private var skipResumeReload = false
+
     private data class AppInfo(val label: String, val icon: Drawable?)
 
     // ------------------------------------------------------------------ Lifecycle
@@ -77,6 +83,20 @@ class EpdManagerActivity : Activity() {
         searchEdit.clearFocus()
         rootView.isFocusableInTouchMode = true
         rootView.requestFocus()
+        loadData()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 控制中心等处改过参数后系统 Provider 已变，本页缓存的 entries 是旧的，重读一遍
+        if (firstResume) {
+            firstResume = false
+            return
+        }
+        if (skipResumeReload) {
+            skipResumeReload = false
+            return
+        }
         loadData()
     }
 
@@ -263,7 +283,7 @@ class EpdManagerActivity : Activity() {
         if (newValue) {
             toast("已开启，正在同步并应用…")
             val launcherComponent = ComponentName(this, LauncherActivity::class.java).toString()
-            Thread { EpdParamsStore.syncAndApply(this, launcherComponent) }.start()
+            LauncherExecutors.io { EpdParamsStore.syncAndApply(this, launcherComponent) }
         } else {
             toast("已关闭自动同步与应用")
         }
@@ -272,7 +292,7 @@ class EpdManagerActivity : Activity() {
     // ------------------------------------------------------------------ Data
 
     private fun loadData() {
-        Thread {
+        LauncherExecutors.io {
             val list = EpdParamsStore.load(this)
             if (allPackages.isEmpty()) {
                 allPackages = loadAllPackages()
@@ -292,7 +312,7 @@ class EpdManagerActivity : Activity() {
                 entries = list
                 render()
             }
-        }.start()
+        }
     }
 
     private fun loadAllPackages(): List<String> {
@@ -571,6 +591,8 @@ class EpdManagerActivity : Activity() {
         textSize = 22f
         setTextColor(color(R.color.ink))
         gravity = Gravity.CENTER
+        // toggleKey 靠这个 tag 反查勾选框；否则勾一下就得重建整页
+        tag = key
     }
 
     private fun cardBackground(): GradientDrawable = GradientDrawable().apply {
@@ -627,9 +649,17 @@ class EpdManagerActivity : Activity() {
     }
 
     private fun toggleKey(key: String) {
-        if (selectedKeys.contains(key)) selectedKeys.remove(key) else selectedKeys.add(key)
+        // 只翻勾选框和计数，不调 render()：列表是全部已装应用一次性铺开的，
+        // 重建一次要重造上千个 View 并触发整屏重刷
+        val checked = if (selectedKeys.contains(key)) {
+            selectedKeys.remove(key)
+            false
+        } else {
+            selectedKeys.add(key)
+            true
+        }
+        container.findViewWithTag<TextView>(key)?.text = if (checked) "☑" else "☐"
         selectedCountText.text = "已选 ${selectedKeys.size} 项"
-        render()
     }
 
     private fun selectedEntries(): List<EpdEntry> {
@@ -678,7 +708,7 @@ class EpdManagerActivity : Activity() {
     }
 
     private fun applySelection(targets: List<EpdEntry>, transform: (EpdEntry) -> EpdEntry?) {
-        Thread {
+        LauncherExecutors.io {
             var ok = 0
             val newList = entries.toMutableList()
             for (e in targets) {
@@ -689,8 +719,8 @@ class EpdManagerActivity : Activity() {
                     newList.removeAll { it.activity == e.activity }
                     true
                 } else if (t.mode == 2) {
-                    // 动画：先占位符化删除系统 Provider 行，再只写本地。
-                    EpdParamsStore.softDeleteInProvider(this, e.activity)
+                    // 动画：不动系统 Provider 里已有的模式行，只在缺失时补一行高画质。
+                    EpdParamsStore.ensureDisplayModeRow(this, t.activity)
                     newList.replaceAll { if (it.activity == e.activity) t else it }
                     true
                 } else {
@@ -711,18 +741,18 @@ class EpdManagerActivity : Activity() {
                 selectedKeys.clear()
                 loadData()
             }
-        }.start()
+        }
     }
 
     private fun softDeleteEntry(e: EpdEntry) {
-        Thread {
+        LauncherExecutors.io {
             val providerOk = EpdParamsStore.softDeleteInProvider(this, e.activity)
             EpdParamsStore.save(this, entries.filter { it.activity != e.activity })
             runOnUiThread {
                 toast(if (providerOk) "已删除（占位符）：${e.activity}" else "本地已移除（Provider 行不存在或已是占位符）")
                 loadData()
             }
-        }.start()
+        }
     }
 
     // ------------------------------------------------------------------ Export / import
@@ -756,8 +786,15 @@ class EpdManagerActivity : Activity() {
         if (resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         when (requestCode) {
-            requestExport -> writeExport(uri)
-            requestImport -> readImport(uri)
+            // 导出不改数据、导入自己会刷新，都不必让 resume 再整页重建一遍
+            requestExport -> {
+                writeExport(uri)
+                skipResumeReload = true
+            }
+            requestImport -> {
+                readImport(uri)
+                skipResumeReload = true
+            }
         }
     }
 
@@ -771,7 +808,7 @@ class EpdManagerActivity : Activity() {
     }
 
     private fun readImport(uri: Uri) {
-        Thread {
+        LauncherExecutors.io {
             val result = runCatching {
                 val text = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
                 val list = parseJson(text)
@@ -798,7 +835,7 @@ class EpdManagerActivity : Activity() {
                 toast(result)
                 loadData()
             }
-        }.start()
+        }
     }
 
     private fun exportJson(items: List<EpdEntry>): String {
@@ -908,6 +945,8 @@ class EpdManagerActivity : Activity() {
 
         val animWindowMsInit = EpdParamsStore.loadAnimWindowMs(this)
         val animFrameCountInit = EpdParamsStore.loadAnimFrameCount(this)
+        // 「清残影间隔」已下线：高画质（dithering=2）本身残影就很少，
+        // 再按页数插全屏重刷只会每几页突兀地闪一次黑。
         val animSteppers = listOf(
             Stepper("注入有效窗口(ms)", 200, 3000, animWindowMsInit, numberEdit(animWindowMsInit)),
             Stepper("动画帧数", 3, 60, animFrameCountInit, numberEdit(animFrameCountInit))
@@ -969,6 +1008,51 @@ class EpdManagerActivity : Activity() {
             visibility = if (entry.mode == 2) View.VISIBLE else View.GONE
         }
         animSteppers.forEach { addStepperRow(animParamsContainer, it) }
+
+        // 条带几何不再单独选：条带数直接由上面的「动画帧数」决定
+        // （15 段 = 系统阅读器同款 48px 竖条；越小越粗）。方向由点击位置决定。
+        fun styleOption(id: Int, title: String, sub: String): RadioButton =
+            RadioButton(this).apply {
+                this.id = id
+                text = "$title\n$sub"
+                textSize = 13f
+                setTextColor(color(R.color.ink))
+                setPadding(dp(2), dp(4), dp(2), dp(4))
+            }
+
+        // 波形档位。EpdUpdateParams 没有独立 waveform 字段，波形只由 updateType 决定：
+        // 0 = DU（HAL waveform 8，不刷黑），4 = FULL/GC（整屏刷黑）。
+        animParamsContainer.addView(TextView(this).apply {
+            text = "刷新波形"
+            textSize = 12f
+            setTextColor(color(R.color.ink))
+            setPadding(0, dp(8), 0, dp(2))
+        })
+        // 波形是逐条目保存的：编辑哪一个条目就显示/保存哪一个条目的波形，
+        // 不能读全局 anim_wave，否则改 A 会把 B 的档位带跑。
+        val animWaveInit = EpdParamsStore.animWaveFor(this, oldActivity ?: entry.activity)
+        val animWaveGroup = RadioGroup(this).apply {
+            orientation = RadioGroup.VERTICAL
+            // 两档都走灰度波形（updateType=3），差别只在 dithering：
+            //   抖动开 = 灰度过渡，条带边缘平滑；
+            //   抖动关 = 没有过渡，条带扫过时是纯黑/纯白硬边，也就是「黑条带」。
+            // 早先「黑条带」档写的是 updateType=4（整屏重刷），而 4 是整屏 GC，
+            // HAL 不会为它跑 drawAnimation —— 那一档根本没有动画，已改掉。
+            addView(styleOption(24, "平滑翻页",
+                    "灰度过渡，条带边缘平滑，残影少，日常推荐"))
+            addView(styleOption(23, "黑闪翻页",
+                    "关掉灰度过渡，条带扫过时是黑白硬边，观感更利落"))
+            when (animWaveInit) {
+                EpdParamsStore.ANIM_WAVE_FULL_DITHER -> check(23)
+                else -> check(24)
+            }
+        }
+        animParamsContainer.addView(animWaveGroup)
+
+        // 「由系统进程注入」不再做成选项：按波形自动路由。
+        //   DU 档 → system_server 写（进程内写 DU 不出动画，实测）
+        //   FULL 档 → 进程内写（system_server 再写一次会叠成两遍动画）
+        // 见 MainHook.reloadPrefs()。
         content.addView(animParamsContainer)
 
         modeGroup.setOnCheckedChangeListener { _, checkedId ->
@@ -1003,37 +1087,25 @@ class EpdManagerActivity : Activity() {
                 )
                 val animWindowMs = readValue(animSteppers[0]).coerceIn(animSteppers[0].min, animSteppers[0].max)
                 val animFrameCount = readValue(animSteppers[1]).coerceIn(animSteppers[1].min, animSteppers[1].max)
-                Thread {
-                    val ok: Boolean
-                    if (selectedMode == 2) {
-                        // 动画模式：先占位符化删除系统 Provider 行，再只写本地供 Xposed 读取。
-                        val old = if (isEdit && oldActivity != null) oldActivity else newEntry.activity
-                        EpdParamsStore.softDeleteInProvider(this, old)
-                        ok = true
-                    } else {
-                        // 高画质 / 流畅：写系统 Provider。编辑改 activity 时先逻辑删除旧行。
-                        if (isEdit && oldActivity != null && oldActivity != newEntry.activity) {
-                            EpdParamsStore.softDeleteInProvider(this, oldActivity)
-                        }
-                        ok = EpdParamsStore.applyToProvider(this, newEntry)
-                    }
-                    if (ok) {
-                        val newList = entries.toMutableList()
-                        if (isEdit && oldActivity != null) {
-                            newList.removeAll { it.activity == oldActivity }
-                        }
-                        newList.removeAll { it.activity == newEntry.activity }
-                        newList.add(newEntry)
-                        EpdParamsStore.save(this, newList)
-                        if (selectedMode == 2) {
-                            EpdParamsStore.saveAnimParams(this, animWindowMs, animFrameCount)
-                        }
-                    }
+                // 条带数完全由「动画帧数」决定，不再有独立的风格选择
+                val animStyle = EpdParamsStore.ANIM_STYLE_CUSTOM
+                val animWave = when (animWaveGroup.checkedRadioButtonId) {
+                    23 -> EpdParamsStore.ANIM_WAVE_FULL_DITHER
+                    else -> EpdParamsStore.ANIM_WAVE_FOLLOW
+                }
+                LauncherExecutors.io {
+                    // 统一入口：本地条目 + Provider 档位 + 动画参数一次写完，
+                    // 和控制中心卡片共用同一套动作，避免两边再漂移。
+                    val ok = EpdParamsStore.setMode(
+                        this, newEntry,
+                        if (isEdit) oldActivity else null,
+                        animWindowMs, animFrameCount, animStyle, animWave
+                    )
                     runOnUiThread {
                         toast(if (ok) "已保存" else "保存失败")
                         loadData()
                     }
-                }.start()
+                }
             }
             .setNegativeButton("取消", null)
             .show()

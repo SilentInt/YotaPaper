@@ -37,6 +37,8 @@ class SettingsController(
     private lateinit var homeColumnsValue: TextView
     private lateinit var homeRowsValue: TextView
     private lateinit var homeDividersValue: TextView
+    private lateinit var homeTopStyleValue: TextView
+    private lateinit var homeTopIconsValue: TextView
     private lateinit var appDividersValue: TextView
     private lateinit var recentWindowValue: TextView
     private lateinit var recentCancelValue: TextView
@@ -82,6 +84,8 @@ class SettingsController(
     private lateinit var settingsControlCenterVibrationValue: TextView
     private lateinit var rowControlCenterEpd: View
     private lateinit var settingsControlCenterEpdValue: TextView
+    private lateinit var rowControlCenterBattery: View
+    private lateinit var settingsControlCenterBatteryValue: TextView
 
     fun bind() {
         colsValue = activity.findViewById(R.id.settingsColsValue)
@@ -89,6 +93,8 @@ class SettingsController(
         homeColumnsValue = activity.findViewById(R.id.settingsHomeColumnsValue)
         homeRowsValue = activity.findViewById(R.id.settingsHomeRowsValue)
         homeDividersValue = activity.findViewById(R.id.settingsHomeDividersValue)
+        homeTopStyleValue = activity.findViewById(R.id.settingsHomeTopStyleValue)
+        homeTopIconsValue = activity.findViewById(R.id.settingsHomeTopIconsValue)
         appDividersValue = activity.findViewById(R.id.settingsAppDividersValue)
         recentWindowValue = activity.findViewById(R.id.settingsRecentWindowValue)
         recentCancelValue = activity.findViewById(R.id.settingsRecentCancelValue)
@@ -134,6 +140,8 @@ class SettingsController(
         settingsControlCenterVibrationValue = activity.findViewById(R.id.settingsControlCenterVibrationValue)
         rowControlCenterEpd = activity.findViewById(R.id.rowControlCenterEpd)
         settingsControlCenterEpdValue = activity.findViewById(R.id.settingsControlCenterEpdValue)
+        rowControlCenterBattery = activity.findViewById(R.id.rowControlCenterBattery)
+        settingsControlCenterBatteryValue = activity.findViewById(R.id.settingsControlCenterBatteryValue)
     }
 
     fun setup(initial: LauncherConfig) {
@@ -185,6 +193,31 @@ class SettingsController(
         activity.findViewById<View>(R.id.rowHomeDividers).setOnClickListener {
             val cfg = currentConfig()
             onConfigChanged(cfg.copy(showHomeDividers = !cfg.showHomeDividers), AFFECT_HOME)
+        }
+        activity.findViewById<View>(R.id.rowHomeTopStyle).setOnClickListener {
+            val cfg = currentConfig()
+            val options = listOf(
+                activity.getString(R.string.home_top_style_classic),
+                activity.getString(R.string.home_top_style_split)
+            )
+            showSelector(
+                activity.getString(R.string.settings_home_top_style), options, cfg.homeTopStyle
+            ) { index ->
+                onConfigChanged(currentConfig().copy(homeTopStyle = index), AFFECT_HOME)
+            }
+        }
+        activity.findViewById<View>(R.id.rowHomeTopIcons).setOnClickListener {
+            val cfg = currentConfig()
+            val options = listOf(
+                activity.getString(R.string.icon_style_line),
+                activity.getString(R.string.icon_style_solid)
+            )
+            showSelector(
+                activity.getString(R.string.settings_home_top_icons), options,
+                cfg.homeTopIconStyle.coerceIn(0, 1)
+            ) { index ->
+                onConfigChanged(currentConfig().copy(homeTopIconStyle = index), AFFECT_HOME)
+            }
         }
         activity.findViewById<View>(R.id.rowAppDividers).setOnClickListener {
             val cfg = currentConfig()
@@ -310,6 +343,22 @@ class SettingsController(
             val cfg = currentConfig()
             onConfigChanged(cfg.copy(controlCenterEpd = !cfg.controlCenterEpd), 0)
         }
+        rowControlCenterBattery.setOnClickListener {
+            val cfg = currentConfig()
+            val options = listOf(
+                activity.getString(R.string.icon_style_line),
+                activity.getString(R.string.icon_style_solid)
+            )
+            showSelector(
+                activity.getString(R.string.settings_cc_battery_style), options,
+                cfg.controlCenterBatteryStyle.coerceIn(0, 1)
+            ) { index ->
+                // 控制中心面板是常驻的（LauncherActivity 里只 inflate 一次），
+                // 所以不带 AFFECT_HOME / AFFECT_ICONS，等下次打开面板时
+                // ControlCenterUi.refreshAll -> pullCurrentState 自己读配置重设
+                onConfigChanged(currentConfig().copy(controlCenterBatteryStyle = index), 0)
+            }
+        }
 
         // 分组折叠逻辑
         rowGroupGrid.setOnClickListener {
@@ -432,6 +481,12 @@ class SettingsController(
         homeColumnsValue.text = GridSizing.resolveColumns(config.homeColumns, homeW, GridSizing.columnCap(homeW)).toString()
         homeRowsValue.text = GridSizing.resolveHomeRows(config.homeRows, homeH, GridSizing.homeRowCap(homeH)).toString()
         homeDividersValue.text = activity.getString(if (config.showHomeDividers) R.string.divider_on else R.string.divider_off)
+        homeTopStyleValue.text = activity.getString(
+            if (config.homeTopStyle == 1) R.string.home_top_style_split else R.string.home_top_style_classic
+        )
+        homeTopIconsValue.text = activity.getString(
+            if (config.homeTopIconStyle == 1) R.string.icon_style_solid else R.string.icon_style_line
+        )
         appDividersValue.text = activity.getString(if (config.showAppDividers) R.string.divider_on else R.string.divider_off)
         recentWindowValue.text = activity.getString(windowLabel(config.recentWindowMs))
         recentCancelValue.text = activity.getString(if (config.recentCancelBackToApp) R.string.recent_cancel_back_to_app else R.string.recent_cancel_back_to_home)
@@ -457,6 +512,9 @@ class SettingsController(
         settingsControlCenterAnimationValue.text = activity.getString(if (config.controlCenterAnimation) R.string.divider_on else R.string.divider_off)
         settingsControlCenterVibrationValue.text = activity.getString(if (config.controlCenterVibration) R.string.divider_on else R.string.divider_off)
         settingsControlCenterEpdValue.text = activity.getString(if (config.controlCenterEpd) R.string.divider_on else R.string.divider_off)
+        settingsControlCenterBatteryValue.text = activity.getString(
+            if (config.controlCenterBatteryStyle == 1) R.string.icon_style_solid else R.string.icon_style_line
+        )
     }
 
     private fun updateAnimationVisibility(config: LauncherConfig) {

@@ -1,7 +1,6 @@
 package com.yota.launcher.ui
 
 import android.content.Context
-import android.content.pm.ResolveInfo
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.util.AttributeSet
@@ -13,6 +12,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.yota.launcher.R
+import com.yota.launcher.data.AppEntry
 import com.yota.launcher.data.grid.GridSizing
 import kotlin.math.abs
 import kotlin.math.min
@@ -23,13 +23,14 @@ import kotlin.math.min
  * - The ViewGroup always keeps a stable pool of [ItemViewHolder]s sized
  *   `columns * rows`, exactly like the reference `EInkLauncherView` /
  *   `LauncherAdapter` pair. Children are inflated only when the grid size
- *   changes.
+ *   changes. 行数浮动的场景用 [reservePool] 把池子固定住，避免数据量跨过行
+ *   边界就整池重建。
  * - Page data is only rebound into the existing holders; empty slots are
  *   cleared in place. No remove/add, no requestLayout, no invalidate is
  *   issued for data changes.
+ * - 只接收 [AppEntry]：label / packageName 由数据层带出，本类不触及 PackageManager。
  *
- * Icon size is adaptive: unless a fixed size was passed to [configure], the
- * icon square is fitted to the current cell and grid
+ * Icon size is adaptive: the icon square is fitted to the current cell and grid
  * (see [GridSizing.computeIconPx]), so the same view behaves identically on a
  * 480x640 phone panel and on larger e-ink screens.
  */
@@ -38,9 +39,14 @@ class EInkLauncherView @JvmOverloads constructor(
     attrs: AttributeSet? = null
 ) : ViewGroup(context, attrs) {
 
+    companion object {
+        // reservePool 的行数上限，防止误传一个很大的容量把 ViewGroup 撑爆
+        private const val MAX_POOL_ROWS = 12
+    }
+
     interface OnItemInteractionListener {
-        fun onItemClick(info: ResolveInfo)
-        fun onItemLongClick(info: ResolveInfo)
+        fun onItemClick(entry: AppEntry)
+        fun onItemLongClick(entry: AppEntry)
     }
 
     interface OnPageChangeListener {
@@ -63,7 +69,10 @@ class EInkLauncherView @JvmOverloads constructor(
     private var appliedIconPx = -1
     private var appliedLabelSize = -1f
 
-    private var apps: List<ResolveInfo?> = emptyList()
+    // holder 池按这个容量分配，与实际数据量无关；多出来的槽位在 bindHolder 里走空分支。
+    // 最近任务这类"行数随数据量浮动"的场景靠它避免每次刷新都 removeAllViews + 重新 inflate。
+    private var poolSize = 0
+    private var apps: List<AppEntry?> = emptyList()
     private var selection: Set<String> = emptySet()
     private var hiddenApps: Set<String> = emptySet()
     private var manageMode = false
@@ -87,10 +96,19 @@ class EInkLauncherView @JvmOverloads constructor(
         setWillNotDraw(false)
     }
 
-    /** 设置网格行列；图标大小由 [onMeasure] 根据屏幕与格子自动计算。 */
+    /**
+     * 设置网格行列；图标大小由 [onMeasure] 根据屏幕与格子自动计算。
+     *
+     * 合并 0.7 后不再有固定的 iconSizeDp 参数；池容量仍按我们的 [reservePool] 机制维护：
+     * 没显式 reserve 过就跟着行列走，列数一变必须重算（池子是按列数切分的）。
+     */
     fun configure(columns: Int, rows: Int) {
+        val colsChanged = this.columns != columns.coerceIn(GridSizing.MIN_COLUMNS, GridSizing.MAX_COLUMNS)
         this.columns = columns.coerceIn(GridSizing.MIN_COLUMNS, GridSizing.MAX_COLUMNS)
         this.rows = rows.coerceIn(GridSizing.MIN_ROWS, GridSizing.MAX_ROWS)
+        if (poolSize == 0 || colsChanged) {
+            poolSize = this.columns * this.rows
+        }
     }
 
     /** Icon edge in px that the grid would use for [columns] x [rows] at [widthPx] x [heightPx]. */
@@ -105,8 +123,23 @@ class EInkLauncherView @JvmOverloads constructor(
         )
     }
 
+    /**
+     * 固定 holder 池容量，不随数据量变化。
+     *
+     * 用于行数浮动的网格：先把池子按最大可能行数建好，之后 [setApps] 只改数据、
+     * 不再动池子，避免"数量跨过行边界"就整池重建。多出的槽位由 [setApps] 传空
+     * 数据清成透明，占位不影响观感。
+     *
+     * @param capacity 池子槽位数，会被向上对齐到 columns 的整数倍。
+     */
+    fun reservePool(capacity: Int) {
+        val cols = columns.coerceIn(GridSizing.MIN_COLUMNS, GridSizing.MAX_COLUMNS)
+        val slots = capacity.coerceIn(cols, cols * MAX_POOL_ROWS)
+        poolSize = ((slots + cols - 1) / cols) * cols
+    }
+
     fun setApps(
-        pageApps: List<ResolveInfo?>,
+        pageApps: List<AppEntry?>,
         selection: Set<String> = emptySet(),
         manageMode: Boolean = false,
         showDividers: Boolean = false,
@@ -130,10 +163,9 @@ class EInkLauncherView @JvmOverloads constructor(
         this.selection = selection
         if (!manageMode) return
         for (i in holders.indices) {
-            val info = apps.getOrNull(i) ?: continue
+            val pkg = apps.getOrNull(i)?.packageName ?: continue
             val marker = holders[i].marker
             if (marker.visibility != View.VISIBLE) continue
-            val pkg = info.activityInfo.packageName
             val text = when {
                 selection.contains(pkg) -> "●"
                 hiddenApps.contains(pkg) -> "隐"
@@ -156,11 +188,12 @@ class EInkLauncherView @JvmOverloads constructor(
     // ------------------------------------------------------------------ Grid
 
     /**
-     * Reference-style reset: keep a stable holder pool of `columns * rows`.
-     * Inflate only when that size changes; otherwise just rebind data.
+     * Reference-style reset: keep a stable holder pool sized by [poolSize]
+     * (or `columns * rows` when no pool was reserved). Inflate only when that
+     * size changes; otherwise just rebind data.
      */
     private fun resetGrid() {
-        val targetCount = columns * rows
+        val targetCount = poolSize.takeIf { it > 0 } ?: (columns * rows)
         if (holders.size != targetCount) {
             removeAllViews()
             holders.clear()
@@ -179,18 +212,28 @@ class EInkLauncherView @JvmOverloads constructor(
     }
 
     private fun rebind() {
+        // 池子可能比可见行数大（reservePool），超出可见范围的槽位直接 GONE：
+        // 既不会被测量/布局，也不参与绘制
+        val visibleCount = columns * rows
         for (i in holders.indices) {
-            bindHolder(holders[i], apps.getOrNull(i))
+            val holder = holders[i]
+            if (i >= visibleCount) {
+                if (holder.itemView.visibility != View.GONE) holder.itemView.visibility = View.GONE
+                holder.boundKey = null
+                continue
+            }
+            if (holder.itemView.visibility != View.VISIBLE) holder.itemView.visibility = View.VISIBLE
+            bindHolder(holder, apps.getOrNull(i))
         }
     }
 
-    private fun bindHolder(holder: ItemViewHolder, info: ResolveInfo?) {
+    private fun bindHolder(holder: ItemViewHolder, entry: AppEntry?) {
         val item = holder.itemView
         val icon = holder.icon
         val label = holder.label
         val marker = holder.marker
 
-        if (info == null) {
+        if (entry == null) {
             // Reference-style clear: empty slot is blank and fully transparent.
             holder.boundKey = null
             if (item.alpha != 0f) item.alpha = 0f
@@ -208,18 +251,19 @@ class EInkLauncherView @JvmOverloads constructor(
         if (item.alpha != 1f) item.alpha = 1f
 
         // 冷启动首帧只绑定 label；图标异步加载，内存/磁盘缓存命中后回填。
-        val key = info.activityInfo.packageName + "/" + info.activityInfo.name
-        holder.boundKey = key
-        IconLoader.loadAsync(context, info) { drawable ->
-            if (holder.boundKey == key && drawable != null) {
+        // 这里刻意不先清空旧图标：清了会多出一帧空白，墨水屏上表现为明显的闪一下。
+        // 代价是换人后短暂显示上一个应用的图标，但视觉连续，反而更不容易察觉。
+        holder.boundKey = entry.key
+        IconLoader.loadAsync(context, entry) { drawable ->
+            if (holder.boundKey == entry.key && drawable != null) {
                 icon.setImageDrawable(drawable)
             }
         }
 
-        val labelText = info.loadLabel(context.packageManager)
-        if (label.text != labelText) label.text = labelText
+        // label 由数据层带出，不走 loadLabel
+        if (label.text != entry.label) label.text = entry.label
 
-        val packageName = info.activityInfo.packageName
+        val packageName = entry.packageName
         val isHidden = hiddenApps.contains(packageName)
         val desiredAlpha = if (isHidden) 0.35f else 1f
         if (icon.alpha != desiredAlpha) icon.alpha = desiredAlpha
@@ -240,15 +284,15 @@ class EInkLauncherView @JvmOverloads constructor(
             if (marker.currentTextColor != markerColor) marker.setTextColor(markerColor)
             item.isClickable = true
             item.isLongClickable = false
-            item.setOnClickListener { itemListener?.onItemClick(info) }
+            item.setOnClickListener { itemListener?.onItemClick(entry) }
             item.setOnLongClickListener(null)
         } else {
             if (marker.visibility != View.GONE) marker.visibility = View.GONE
             item.isClickable = true
             item.isLongClickable = true
-            item.setOnClickListener { itemListener?.onItemClick(info) }
+            item.setOnClickListener { itemListener?.onItemClick(entry) }
             item.setOnLongClickListener {
-                itemListener?.onItemLongClick(info)
+                itemListener?.onItemLongClick(entry)
                 true
             }
         }
@@ -312,6 +356,7 @@ class EInkLauncherView @JvmOverloads constructor(
             val cellW = MeasureSpec.makeMeasureSpec(w / columns, MeasureSpec.EXACTLY)
             val cellH = MeasureSpec.makeMeasureSpec(h / rows, MeasureSpec.EXACTLY)
             for (holder in holders) {
+                if (holder.itemView.visibility == View.GONE) continue
                 holder.itemView.measure(cellW, cellH)
             }
         }
@@ -326,9 +371,15 @@ class EInkLauncherView @JvmOverloads constructor(
         val cellW = w / columns
         val cellH = h / rows
         for (index in holders.indices) {
+            val itemView = holders[index].itemView
+            // GONE 的槽位不占位，留它停在 (0,0,0,0)
+            if (itemView.visibility == View.GONE) {
+                itemView.layout(0, 0, 0, 0)
+                continue
+            }
             val row = index / columns
             val col = index % columns
-            holders[index].itemView.layout(
+            itemView.layout(
                 paddingLeft + col * cellW,
                 paddingTop + row * cellH,
                 paddingLeft + (col + 1) * cellW,
@@ -396,23 +447,10 @@ class EInkLauncherView @JvmOverloads constructor(
                 val adx = abs(dx)
                 val ady = abs(dy)
                 if (swipeThreshold > 0 && (adx > swipeThreshold || ady > swipeThreshold)) {
-                    val next: Boolean
-                    val axis: String
-                    if (adx > ady) {
-                        next = dx < 0
-                        axis = if (dx < 0) "left" else "right"
-                    } else {
-                        next = dy < 0
-                        axis = if (dy < 0) "up" else "down"
-                    }
-                    android.util.Log.d("EInkLauncherView",
-                        "swipe: dx=$dx dy=$dy threshold=$swipeThreshold -> " +
-                                "$axis ${if (next) "onNextPage" else "onPrevPage"}")
+                    // 哪个方向走得多就按哪个方向算：横向占优看左右，纵向占优看上下。
+                    val next = if (adx > ady) dx < 0 else dy < 0
                     if (next) pageListener?.onNextPage() else pageListener?.onPrevPage()
                     return true
-                } else {
-                    android.util.Log.d("EInkLauncherView",
-                        "swipe ignored: dx=$dx dy=$dy threshold=$swipeThreshold")
                 }
             }
         }

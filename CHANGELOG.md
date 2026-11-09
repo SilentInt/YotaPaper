@@ -1,5 +1,84 @@
 # 更新日志
 
+## [未发布]
+
+### 翻页动画：回到原项目注入路径，DU / FULL 只是波形开关
+
+上一版把注入挪到了 system_server，并和进程内注入同时存在，带来两个可复现的问题：
+DU 档第一次点击没动画、FULL 档动画走两遍。这一版把写入收敛成**单一写手**。
+
+- **单一写手**：默认由目标 App 进程内注入（和原项目一致），system_server 侧只装钩子、
+  不写参数。`anim_server` 为 true 时才反过来由 system_server 写、进程内跳过 ——
+  两条路互斥，不会互相覆盖。
+- **一次点击 = 一次动画**：去掉 `setEpdParams` / `setEpdParamsForDrawing` 的 `after`
+  二次注入，也去掉「刚注入过 400ms 内再放行」的兜底。同一次点击只穿过一个入口、
+  只写一次参数，FULL 档不会再走两遍。
+- **几何回到原项目算法**：按「动画帧数」等分屏宽、竖条整屏高，不再走固件预设数组
+  分支（`anim_style` 实际已不参与几何计算）。
+- **DU 档必须显式把 `mEpdViewDithering` 归 0**：只要当前是灰度抖动 / `ATKINSON_16` 之类的
+  全局抖动模式，HAL 会选 **waveform 2 而不是 8**，DU 动画根本不成立（现象就是「页照翻、
+  一点动画都没有」）。这条来自早期测试程序打出 `animation:enabled` +
+  `Update with waveform = 8` 时验证过的组合：`type=0` + `dither=0` + `regional=true`。
+- **`mIsRegionalUpdate` 分档处理**：FULL 不写（原项目没写过；多写会让 HAL 按区域刷，
+  变成「一块一块闪」）；DU 必须写 `true`，否则 HAL 只做一次整屏刷新、不逐带推进，
+  那 60 个动画矩形不会被消费。
+- **配置热生效**：点击抬手时重读配置，设置里把 DU 切成 FULL 后不用重启阅读器
+  （`XSharedPreferences.reload()` 按 mtime 判断，文件没变时只是一次 stat）。
+- system_server 的点击信号轮询在「不由它写参数」时从 40ms 降到 250ms，避免空转。
+
+### 翻页动画：方向修正 + 选项精简
+
+- **上一页/下一页方向修正**：点右侧 = 从右到左，点左侧 = 从左到右。
+- 「翻页动画风格」整组删除，条带数一律由「动画帧数」控制。
+- 波形只保留两项：**无黑闪（DU）** 与 **原项目效果（FULL + 灰度抖动）**。
+- DU 档不写 `mEpdViewDithering`：抖动属于「流畅显示」里的画面参数，与动画无关。
+
+
+> 注入翻页动画支持风格选择：可在原厂两种条带与本项目自定义条带之间切换。
+
+### 新增：翻页动画风格可选
+
+- EPD 参数管理中，「设为动画」的条目新增「翻页动画风格」三选一：
+  - **原厂细条 · 左右**：15 段 48px 竖条，整屏高，沿水平方向推开（即系统阅读器的效果）。
+  - **原厂宽条 · 上下**：15 段 85px 横带，整屏宽，沿垂直方向推开。
+  - **自定义条带**：条带数等于「动画帧数」设置，帧数越少条带越粗。
+- 两种原厂风格的坐标直接取自固件 `EInkSdk.getAnimationFrames` 的 15 段预设（含 1280/15 的四舍五入与末段余量），不是近似值。
+- 配置写入 `anim_style`，由 Xposed 侧在目标 App 进程启动时读取，改完需重启目标 App 生效。
+
+### 修复：注入的翻页动画夹着黑条带
+
+- **更正上一版的结论**：`EpdUpdateParams` 根本没有独立的 waveform 字段
+  （实测字段只有 `mEpdViewUpdateType` / `mEpdViewDithering` / `mIsRegionalUpdate`
+  / `mCustomAnimation` 等），波形完全由 `updateType` 决定：
+  - `updateType = 0` → HAL 日志 `Update with waveform = 8`，DU，无黑闪；
+  - `updateType = 4` → FULL/GC，整屏先刷黑再刷白。
+  所以「黑色条带」不是抖动造成的，是 FULL/GC 波形本身的刷屏过程。
+- 默认档位改为 **DU**（`updateType = 0`）；实测 EPD 测试程序在 DU 下
+  仍会逐带播放 `Animation:`（15 段），动画与 DU 并不互斥。
+
+### 改动：动画帧直接取固件预设数组
+
+- 不再自己拼几何：新增 `EpdPageTurnHook.stockFrames()`，通过反射调用
+  `com.yotadevices.framework.EpdAnimation` 的
+  `getAnimationHorizontalLeft/Right`、`getAnimationVerticalTop/Bottom`，
+  直接拿到 60 个 int（15 段 × `{left, top, right, bottom}`），与系统阅读器播放的完全一致。
+- 本机实测预设值（720×1280）：
+  - `HorizontalLeft`  `0,0,48,1280 → 48,0,96,1280 → … → 672,0,720,1280`（横向扫）
+  - `VerticalTop`     `0,0,720,85 → 0,85,720,171 → … → 0,1195,720,1280`（纵向扫）
+- 只有分辨率不是 720×1280 或取不到该方法时，才回退到本地按 `bandEdge()` 拼几何。
+- 注入点补上 `setEpdParams` / `setEpdParamsForDrawing` 的 after 钩子，
+  保证「最后一个写参数的是我们」，不被框架随后写回 `updateType` 盖掉。
+- 同时写入 `mIsRegionalUpdate = true`，与系统阅读器 / 测试程序的调用点保持一致。
+
+### 调试：`anim_always_arm` 与 adb 改配置
+
+- 新增 `anim_always_arm`：不看点击，任何一次 EPD 更新都注入动画，
+  用于「不点也能验证」的对照实验。
+- 新增 `DebugPrefsReceiver`，可用 adb 直接改模块配置：
+  `adb shell am broadcast -n com.yota.launcher/.xposed.DebugPrefsReceiver --es activity 包/类 --ei style 0 --ei wave 0 --ei always_arm 1 --ei debug 1`
+- `MainHook` 在每个进程启动时无条件打一行 `YotaPageTurn: load <pkg>`，
+  用来区分「模块没加载」和「加载了但没读到配置」。
+
 ## [0.7] - 2026-11-05
 
 > 网格与图标全面自适应：行列数按屏幕自动挑选，图标和文字大小随格子伸缩，并开放更大的行列数范围。
